@@ -2,11 +2,12 @@
 
 import os
 
-from typing import List, Optional
+from config import PG_USER, PG_PASS, PG_HOST, PG_PORT, PG_DB
+
 from sqlalchemy import String
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
-from config import PG_USER, PG_PASS, PG_HOST, PG_PORT, PG_DB
+
 
 engine = create_async_engine(
     f"postgresql+psycopg2://{PG_USER}:{PG_PASS}@{PG_HOST}:{PG_PORT}/{PG_DB}",
