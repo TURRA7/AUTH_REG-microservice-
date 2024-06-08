@@ -6,10 +6,10 @@ from typing import List, Optional
 from sqlalchemy import String
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
-
+from config import PG_USER, PG_PASS, PG_HOST, PG_PORT, PG_DB
 
 engine = create_async_engine(
-    f"postgresql+psycopg2://{os.getenv("PG_USER")}:{"PG_PASS"}@{"PG_HOST"}/{"PG_DB"}",
+    f"postgresql+psycopg2://{PG_USER}:{PG_PASS}@{PG_HOST}:{PG_PORT}/{PG_DB}",
     echo=True)
 
 
@@ -22,7 +22,7 @@ class Base(DeclarativeBase):
 
 class User(Base):
     """Table for user registration and authorization."""
-    __tablename__ = "users"
+    __tablename__ = "user"
 
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(30), nullable=False)
