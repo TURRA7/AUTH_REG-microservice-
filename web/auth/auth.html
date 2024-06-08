@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>АВТОРИЗАЦИЯ</title>
+  <link rel="stylesheet" type="text/css" href="auth.css">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Montserrat+Alternates:wght@400;700&display=swap">
+</head>
+<body>
+  <div class="block_content">
+    <div class="block_button">
+      <button class="btn_nav">СТАТЬИ</button>
+      <button class="btn_nav">КАБИНЕТ</button>
+      <button class="btn_nav">РЕГИСТРАЦИЯ</button>
+    </div>
+    <div class="block_form">
+      <form class="auth_form" action="/submit-form" method="POST">
+        <label class="label_auth">АВТОРИЗАЦИЯ</label>
+        <input class="inp_log" type="text" id="login" name="login" placeholder="Логин ..." required>
+        <input class="inp_pass" type="text" id="password" name="password" placeholder="Пароль ..." required>
+        <button class="btn_login" type="submit">ВОЙТИ</button>
+      </form>
+    </div>
+  </div>
+</body>
+</html>
