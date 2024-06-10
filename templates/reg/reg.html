@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>РЕГИСТРАЦИЯ</title>
-  <link rel="stylesheet" type="text/css" href="reg.css">
+  <link rel="stylesheet" type="text/css" href="/static/css/reg.css">
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Montserrat+Alternates:wght@400;700&display=swap">
 </head>
 <body>
@@ -15,14 +15,18 @@
           <button class="btn_nav">ВХОД</button>
         </div>
         <div class="block_form">
-          <form class="reg_form" action="/submit-form" method="POST">
+          <form id="registration-form" class="reg_form" action="/registration" method="POST">
             <label class="label_reg">РЕГИСТРАЦИЯ</label>
             <input class="inp_log" type="text" id="login" name="login" placeholder="Логин ..." required>
-            <input class="inp_pass" type="text" id="password" name="password" placeholder="Пароль ..." required>
-            <input class="inp_pass_two" type="text" id="password_two" name="password_two" placeholder="Пароль еще раз..." required>
+            <span id="login-error" style="color: red;"></span>
+            <input class="inp_pass" type="password" id="password" name="password" placeholder="Пароль ..." required>
+            <span id="password-error" style="color: red;"></span>
+            <input class="inp_pass_two" type="password" id="password_two" name="password_two" placeholder="Пароль еще раз..." required>
+            <span id="password-two-error" style="color: red;"></span>
             <button class="btn_login" type="submit">ВОЙТИ</button>
           </form>
         </div>
     </div>
+    <script src="/static/js/reg.js"></script>
 </body>
 </html>
