@@ -17,13 +17,15 @@
         <div class="block_form">
           <form id="registration-form" class="reg_form" action="/registration" method="POST">
             <label class="label_reg">РЕГИСТРАЦИЯ</label>
+            <input class="inp_email" type="text" id="email" name="email" placeholder="Почта ..." required>
+            <span id="email-error" style="color: red;"></span>
             <input class="inp_log" type="text" id="login" name="login" placeholder="Логин ..." required>
             <span id="login-error" style="color: red;"></span>
             <input class="inp_pass" type="password" id="password" name="password" placeholder="Пароль ..." required>
             <span id="password-error" style="color: red;"></span>
             <input class="inp_pass_two" type="password" id="password_two" name="password_two" placeholder="Пароль еще раз..." required>
             <span id="password-two-error" style="color: red;"></span>
-            <button class="btn_login" type="submit">ВОЙТИ</button>
+            <button class="btn_login" type="submit">ЗАРЕГИСТРИРОВАТЬ</button>
           </form>
         </div>
     </div>

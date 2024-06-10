@@ -5,13 +5,13 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
 from api.api import app_auth, app_reg
-from database.FDataBase import create_tables
+from database.FDataBase import create_tables, delete_tables
 
 
 app = FastAPI()
 
 app.include_router(app_reg)
-
+app.include_router(app_auth)
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
