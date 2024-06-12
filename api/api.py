@@ -51,9 +51,9 @@ async def registration(request: Request,
 
     code = random.randint(1000, 9999)
 
-    ### Разобраться с проблемой возврата картежей функции send_email
-    ### Разобраться с проблемой возврата картежей функции send_email
-    ### Разобраться с проблемой возврата картежей функции send_email
+    ### Доделать регистрацию с отправкой письма
+    ### Доделать регистрацию с отправкой письма
+    ### Доделать регистрацию с отправкой письма
     try:
         with open('template_message/t_code.txt', 'r', encoding='utf-8') as file:
             content = file.read()

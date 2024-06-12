@@ -22,7 +22,7 @@ async def send_email(email: str, message: str, context: str):
     try:
         with smtplib.SMTP_SSL(WORK_HOSTNAME, WOKR_PORT,
                               context=context_ssl, timeout=2) as server:
-            await server.login(WOKR_EMAIL, WOKR_EMAIL_PASS)
+            server.login(WOKR_EMAIL, WOKR_EMAIL_PASS)
             message = Template(message).substitute(context)
             server.sendmail(WOKR_EMAIL, email, message.encode('utf-8'))
     except smtplib.SMTPException as ex:
