@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ПОДТВЕРЖДЕНИЕ КОДА</title>
+  <link rel="stylesheet" type="text/css" href="/static/css/confirm.css">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Montserrat+Alternates:wght@400;700&display=swap">
+</head>
+<body>
+    <div class="block_content">
+        <div class="block_form">
+          <form id="confirm_form" class="confirm_form" action="/registration/confirm" method="POST">
+            <label class="label_confirm">ПОДТВЕРЖДЕНИЕ КОДА</label>
+            <input class="inp_code" type="text" id="code" name="code" placeholder="Проверочный код ..." required>
+            <span id="code-error" style="color: red;"></span>
+            <button id="authButton" class="btn_code" type="submit">ЗАРЕГИСТРИРОВАТЬ</button>
+          </form>
+        </div>
+    </div>
+    <script src="/static/js/confirm.js"></script>
+</body>
+</html>

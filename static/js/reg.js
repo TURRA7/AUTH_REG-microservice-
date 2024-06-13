@@ -77,7 +77,7 @@ document.getElementById('registration-form').addEventListener('submit', async fu
         if (response.status !== 200) {
             alert(data.message);
         } else {
-            alert('Регистрация успешна!');
+            window.location.href = '/registration/confirm';
         }
     }
 });
