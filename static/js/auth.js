@@ -4,6 +4,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
         const login = document.getElementById('login').value;
         const password = document.getElementById('password').value;
+        const rememberMe = document.getElementById('memorize-user').checked;
 
         let isValid = true;
 
@@ -30,6 +31,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 body: new URLSearchParams({
                     'login': login,
                     'password': password,
+                    'rememberMe': rememberMe
                 }),
             });
 
@@ -56,4 +58,13 @@ document.getElementById('show-password').addEventListener('change', function() {
     } else {
         passwordInput.type = 'password';
     }
+});
+
+document.getElementById('memorize-user').addEventListener('change', function() {
+    localStorage.setItem('rememberMe', this.checked ? 'true' : 'false');
+});
+
+document.addEventListener('DOMContentLoaded', function() {
+    const rememberMe = localStorage.getItem('rememberMe') === 'true';
+    document.getElementById('memorize-user').checked = rememberMe;
 });

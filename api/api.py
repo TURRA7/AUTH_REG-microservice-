@@ -12,10 +12,12 @@ from e_mails.send_letters import send_email
 
 # Указываем папку для чтения html шаблонов
 templates = Jinja2Templates(directory="templates")
-# Регистрируем роутеры, для формы регистрации
+# Роутеры, для формы регистрации
 app_reg = APIRouter(prefix="/registration")
-# Регистрируем роутеры, для формы авторизации
+# Роутеры, для формы авторизации
 app_auth = APIRouter(prefix="/authorization")
+# Роутеры для логаута
+app_logout = APIRouter(prefix="/logout")
 
 
 @app_reg.get("/", response_class=HTMLResponse)
@@ -145,7 +147,8 @@ async def confirm(request: Request,
 @app_auth.post("/")
 async def authorization(request: Request,
                         login: Annotated[str, Form()],
-                        password: Annotated[str, Form()]
+                        password: Annotated[str, Form()],
+                        remember_me: bool = Form(False)
                         ) -> JSONResponse:
     """
     Обработчик логики авторизации.
@@ -171,10 +174,16 @@ async def authorization(request: Request,
                       'r', encoding='utf-8') as file:
                 content = file.read()
             await send_email(user[0].email, content, {'code': code})
-            return JSONResponse(content={"key": user[0].email},
-                                status_code=200)
+            response = JSONResponse(content={"key": user[0].email},
+                                    status_code=200)
+            if remember_me:
+                # Устанавливаем cookie для запоминания пользователя
+                response.set_cookie(key="remember_me", value="true",
+                                    max_age=30*24*60*60)
+                # Здесь логика запоминания например, через JWT токены и т.д.
+            return response
         except Exception as ex:
-            return JSONResponse(content={"message": ex},
+            return JSONResponse(content={"message": str(ex)},
                                 status_code=400)
 
 
@@ -201,3 +210,9 @@ async def verification(request: Request,
     else:
         return JSONResponse(content={"message": "Введенный код неверный!"},
                             status_code=400)
+
+
+@app_logout.post("/")
+async def logout(request: Request) -> JSONResponse:
+    """Обработчик выхода пользователя"""
+    pass
