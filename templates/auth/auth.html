@@ -12,7 +12,7 @@
     <div class="block_button">
       <button class="btn_nav">СТАТЬИ</button>
       <button class="btn_nav">КАБИНЕТ</button>
-      <button class="btn_nav">РЕГИСТРАЦИЯ</button>
+      <button id="redirect_reg" class="btn_nav">РЕГИСТРАЦИЯ</button>
     </div>
     <div class="block_form">
       <form id="authorization-form" class="auth_form" action="/authorization" method="POST">
@@ -21,6 +21,16 @@
         <span id="login-error" style="color: red;"></span>
         <input class="inp_pass" type="password" id="password" name="password" placeholder="Введите пароль ..." required>
         <span id="password-error" style="color: red;"></span>
+        <div class="all_checkbox">
+          <div class="show-password">
+            <input type="checkbox" id="show-password">
+            <label for="show-password">Показать пароль</label>
+          </div>
+          <div class="memorize-user">
+            <input type="checkbox" id="memorize-user">
+            <label for="memorize-user">Запомнить меня</label>
+          </div>
+        </div>
         <button class="btn_login" type="submit">ОТПРАВИТЬ КОД</button>
       </form>
     </div>

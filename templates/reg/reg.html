@@ -12,7 +12,7 @@
         <div class="block_button">
           <button class="btn_nav">СТАТЬИ</button>
           <button class="btn_nav">КАБИНЕТ</button>
-          <button class="btn_nav">ВХОД</button>
+          <button id="redirect_auth" class="btn_nav">ВХОД</button>
         </div>
         <div class="block_form">
           <form id="registration-form" class="reg_form" action="/registration" method="POST">
@@ -25,6 +25,12 @@
             <span id="password-error" style="color: red;"></span>
             <input class="inp_pass_two" type="password" id="password_two" name="password_two" placeholder="Пароль еще раз..." required>
             <span id="password-two-error" style="color: red;"></span>
+            <div class="all_checkbox">
+              <div class="show-password">
+                <input type="checkbox" id="show-password">
+                <label for="show-password">Показать пароль</label>
+              </div>
+            </div>
             <button id="redirectButton" class="btn_login" type="submit">ОТПРАВИТЬ КОД</button>
           </form>
         </div>

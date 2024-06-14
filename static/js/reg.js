@@ -81,3 +81,19 @@ document.getElementById('registration-form').addEventListener('submit', async fu
         }
     }
 });
+
+document.getElementById("redirect_auth").onclick = function() {
+    window.location.href = "/authorization";
+};
+
+document.getElementById('show-password').addEventListener('change', function() {
+    var passwordInput = document.getElementById('password');
+    var passwordInputTwo = document.getElementById('password_two');
+    if (this.checked) {
+        passwordInput.type = 'text';
+        passwordInputTwo.type = 'text';
+    } else {
+        passwordInput.type = 'password';
+        passwordInputTwo.type = 'password';
+    }
+});

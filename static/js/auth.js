@@ -43,3 +43,17 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     });
 });
+
+document.getElementById("redirect_reg").onclick = function() {
+    window.location.href = "/registration";
+};
+
+
+document.getElementById('show-password').addEventListener('change', function() {
+    var passwordInput = document.getElementById('password');
+    if (this.checked) {
+        passwordInput.type = 'text';
+    } else {
+        passwordInput.type = 'password';
+    }
+});

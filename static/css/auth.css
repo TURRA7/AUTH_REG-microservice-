@@ -92,6 +92,18 @@ body, html {
     background-color: #9E9B98;
 }
 
+.all_checkbox {
+    display: flex;
+    gap: 20px;
+    margin-bottom: 20px;
+}
+
+.memorize-user,
+.show-password {
+    display: flex;
+    align-items: center;
+}
+
 @media screen and (min-width: 1026px) and (max-width: 1280px) {
     .label_auth {
         font-size: 37px;

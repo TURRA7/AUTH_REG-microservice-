@@ -93,6 +93,21 @@ body, html {
 .btn_login:hover {
     background-color: #9E9B98;
 }
+
+.all_checkbox {
+    display: flex;
+    gap: 20px;
+    margin-bottom: 20px;
+}
+
+.show-password {
+    display: flex;
+    align-items: center;
+}
+
+.show-password label {
+    margin-left: 5px;
+}
 @media screen and (min-width: 1026px) and (max-width: 1280px) {
     .label_reg {
         font-size: 37px;
