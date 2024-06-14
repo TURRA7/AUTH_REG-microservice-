@@ -1,10 +1,10 @@
-document.getElementById('confirm_form').addEventListener('submit', async function(event) {
+document.getElementById('verification_form').addEventListener('submit', async function(event) {
     event.preventDefault();
 
     const code = document.getElementById('code').value;
 
     try {
-        const response = await fetch('/registration/confirm', {
+        const response = await fetch('/authorization/verification', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/x-www-form-urlencoded',
@@ -15,12 +15,11 @@ document.getElementById('confirm_form').addEventListener('submit', async functio
         });
 
         if (response.ok) {
-            alert('Регистрация успешна!');
-            window.location.href = '/authorization';
+            alert('Успешно!');
         } else {
             const data = await response.json();
             alert(data.message);
-            window.location.href = '/registration/confirm';
+            window.location.href = '/authorization/verification';
         }
     } catch (error) {
         console.error('Ошибка:', error);

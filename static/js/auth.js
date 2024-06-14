@@ -38,7 +38,7 @@ document.addEventListener('DOMContentLoaded', function() {
             if (response.status !== 200) {
                 alert(data.message);
             } else {
-                alert('Авторизация успешна!');
+                window.location.href = '/authorization/verification';
             }
         }
     });
