@@ -44,10 +44,11 @@ body, html {
     height: 75%;
     display: flex;
     justify-content: center;
-    margin-top: 5%;
+    align-items: center;
+    margin-top: 4%;
 }
 
-.auth_form {
+.confirm_form {
     width: 50%;
     height: 60%;
     background-color: #E7EAEF;
@@ -59,65 +60,39 @@ body, html {
     border-radius: 5px;
 }
 
-.auth_form label,
+.confirm_form label,
 .block_form input,
 .block_form button {
-    margin-bottom: 5%;
+    margin-bottom: 4%;
 }
 
-.label_auth {
+.label_confirm {
     font-size: 47px;
     font-family: 'Montserrat Alternates', sans-serif;
     font-weight: 450;
     margin-top: 5%;
 }
 
-.inp_log,
-.inp_pass {
+.inp_code {
     width: 50%;
     height: 5%;
     border-radius: 5px;
     border-color: #E7EAEF;
 }
 
-.btn_login {
+.btn_code {
     width: 25%;
-    height: 8%;
+    height: 5%;
     border-radius: 5px;
     border-color: #E7EAEF;
-    background-color: #b5e9a0;
+    background-color: #F9D692;
 }
 
 .btn_login:hover {
     background-color: #9E9B98;
 }
-
-.btn_recover {
-    width: 25%;
-    height: 8%;
-    border-radius: 5px;
-    border-color: #E7EAEF;
-    background-color: #f1d484;
-}
-
-.btn_recover:hover {
-    background-color: #9E9B98;
-}
-
-.all_checkbox {
-    display: flex;
-    gap: 20px;
-    margin-bottom: 20px;
-}
-
-.memorize-user,
-.show-password {
-    display: flex;
-    align-items: center;
-}
-
 @media screen and (min-width: 1026px) and (max-width: 1280px) {
-    .label_auth {
+    .label_confirm {
         font-size: 37px;
         font-family: 'Montserrat Alternates', sans-serif;
         font-weight: 450;
@@ -126,7 +101,7 @@ body, html {
 }
 
 @media screen and (max-width: 1025px ) {
-    .label_auth {
+    .label_confirm {
         font-size: 25px;
         font-family: 'Montserrat Alternates', sans-serif;
         font-weight: 450;

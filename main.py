@@ -17,7 +17,7 @@ app.include_router(app_auth)
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
 app.add_middleware(SessionMiddleware, secret_key=SECRET_KEY,
-                   max_age=1800)
+                   max_age=360)
 
 
 if __name__ == "__main__":

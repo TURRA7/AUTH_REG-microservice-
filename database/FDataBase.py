@@ -19,12 +19,13 @@ async_session = sessionmaker(
     engine, class_=AsyncSession, expire_on_commit=False
 )
 
+
 class Base(DeclarativeBase):
     pass
 
 
 class User(Base):
-    """Table for user registration and authorization."""
+    """Таблица пользователя для регистрации и аутентификации."""
     __tablename__ = "user"
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -35,40 +36,55 @@ class User(Base):
 
     def __repr__(self) -> str:
         return f"User(id={self.id!r}, name={self.name!r}, password={self.password!r})"
-    
+
 
 async def create_tables() -> None:
-    """Asynchronous function for adding specified tables."""
+    """Функция создания таблиц."""
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
 
 async def delete_tables() -> None:
-    """Asynchronous function to delete all tables."""
+    """Функция удаления таблиц."""
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
-    
+
 
 async def select_by_user(login) -> List[User]:
-    """Getting a specific user from a table, by login."""
+    """Получение данных из таблцы по логину."""
     async with AsyncSession(engine) as session:
         result = await session.execute(select(User).where(User.name == login))
         users = result.scalars().all()
         return users
-    
+
 
 async def select_by_email(email) -> List[User]:
-    """Getting a specific user from a table, by email."""
+    """Получение данных из таблцы по почте."""
     async with AsyncSession(engine) as session:
         result = await session.execute(select(User).where(User.email == email))
         users = result.scalars().all()
         return users
-        
+
 
 async def add_user(email, login, password) -> None:
-    """Adding a user to a table."""
+    """Добавление пользователя в таблицу."""
     async with AsyncSession(engine) as session:
         async with session.begin():
             result = User(email=email, name=login, password=password)
             session.add(result)
             await session.commit()
+
+
+async def update_password(email, password) -> None:
+    """Изменение пароля пользователя."""
+    async with AsyncSession(engine) as session:
+        async with session.begin():
+            user = await session.execute(
+                select(User).where(User.email == email))
+            result = user.scalars().first()
+            if result:
+                result.password = password
+                await session.commit()
+            else:
+                # Заменить на логги в будущем
+                print(f"User with login {email} not found.")

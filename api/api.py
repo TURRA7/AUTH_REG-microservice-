@@ -6,7 +6,7 @@ from fastapi import APIRouter, Form, Request
 from fastapi.templating import Jinja2Templates
 from fastapi.responses import HTMLResponse, JSONResponse
 
-from database.FDataBase import select_by_user, select_by_email, add_user
+from database.FDataBase import select_by_user, select_by_email, add_user, update_password
 from e_mails.send_letters import send_email
 
 
@@ -64,6 +64,43 @@ async def template_verification(request: Request) -> HTMLResponse:
     """
     return templates.TemplateResponse(
         "verification/verification.html", {"request": request})
+
+
+@app_auth.get("/recover", response_class=HTMLResponse)
+async def template_recover(request: Request) -> HTMLResponse:
+    """
+    Обработчик html страницы восстановления пароля.
+
+    return:
+        Возвращает отрендареный шаблон
+    """
+    return templates.TemplateResponse(
+        "recover/recover.html", {"request": request})
+
+
+@app_auth.get("/recover/reset_code", response_class=HTMLResponse)
+async def template_reset_code(request: Request) -> HTMLResponse:
+    """
+    Обработчик html страницы восстановления пароля(введения кода).
+
+    return:
+        Возвращает отрендареный шаблон
+    """
+    return templates.TemplateResponse(
+        "reset_code/reset_code.html", {"request": request})
+
+
+@app_auth.get("/recover/reset_code/change_password",
+              response_class=HTMLResponse)
+async def template_change_password(request: Request) -> HTMLResponse:
+    """
+    Обработчик html страницы изменения пароля.
+
+    return:
+        Возвращает отрендареный шаблон
+    """
+    return templates.TemplateResponse(
+        "change_password/change_password.html", {"request": request})
 
 
 @app_reg.post("/")
@@ -210,6 +247,97 @@ async def verification(request: Request,
     else:
         return JSONResponse(content={"message": "Введенный код неверный!"},
                             status_code=400)
+
+
+@app_auth.post("/recover")
+async def recover(request: Request,
+                  user: Annotated[str, Form()]) -> JSONResponse:
+    """
+    ...
+
+    return:
+        Возвращает JSONResponse ответ.
+    """
+    if "@" in user:
+        result = await select_by_email(user)
+        if not result:
+            return JSONResponse(
+                content={"message": "Пользователь не существует!"},
+                status_code=400)
+        else:
+            try:
+                code = random.randint(1000, 9999)
+                request.session['code'] = code
+                request.session['email'] = user
+                with open('template_message/t_recover.txt',
+                          'r', encoding='utf-8') as file:
+                    content = file.read()
+                await send_email(user, content, {'code': code})
+                return JSONResponse(content={"key": user},
+                                    status_code=200)
+            except Exception as ex:
+                return JSONResponse(content={"message": str(ex)},
+                                    status_code=400)
+    else:
+        return JSONResponse(content={"message": "Укажите почту, а не логин!"},
+                            status_code=400)
+
+
+@app_auth.post("/recover/reset_code")
+async def reset_code(request: Request,
+                     code: Annotated[str, Form()]) -> JSONResponse:
+    """
+    Функция подтверждения авторизации, по введенному коду.
+
+    Сессия очищается после 3х минут, если код вводится не верный.
+
+    args:
+        verification_code: Код полученный из сессии.
+
+    return:
+        Возвращает JSONResponse ответ.
+    """
+    verification_code = request.session.get('code')
+
+    if str(code) == str(verification_code):
+        return JSONResponse(content={"message": "Можете менять пароль!"},
+                            status_code=200)
+    else:
+        return JSONResponse(content={"message": "Введенный код неверный!"},
+                            status_code=400)
+
+
+@app_auth.post("/recover/reset_code/change_password")
+async def change_password(request: Request,
+                          password: Annotated[str, Form()],
+                          password_two: Annotated[str, Form()]
+                          ) -> JSONResponse:
+    """
+    Функция подтверждения авторизации, по введенному коду.
+
+    Сессия очищается после 3х минут, если код вводится не верный.
+
+    args:
+        verification_code: Код полученный из сессии.
+
+    return:
+        Возвращает JSONResponse ответ.
+    """
+
+    try:
+        email = request.session.get('email')
+        await update_password(email, generate_password_hash(password))
+        request.session.clear()
+        return JSONResponse(content={"message": "Пароль изменён!"},
+                            status_code=200)
+    except Exception as ex:
+        return JSONResponse(content={"message": str(ex)},
+                            status_code=400)
+
+    # Решить вопросы с:
+    # Тем что после изменения пароля, должно редиректить на /authorization, а не просто присылать {"message": "Пароль изменён!"}
+    # Что каждая последующая страница восстановления пароля, должна открываться только если выполнена предыдущая
+    # Дописать документацию на вообще всё, что самое главное понятную документацию
 
 
 @app_logout.post("/")

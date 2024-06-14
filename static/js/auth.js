@@ -68,3 +68,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const rememberMe = localStorage.getItem('rememberMe') === 'true';
     document.getElementById('memorize-user').checked = rememberMe;
 });
+
+document.getElementById("btn_recover").onclick = function() {
+    window.location.href = "/authorization/recover";
+};
