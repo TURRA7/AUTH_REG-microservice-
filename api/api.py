@@ -323,12 +323,11 @@ async def change_password(request: Request,
     return:
         Возвращает JSONResponse ответ.
     """
-
     try:
         email = request.session.get('email')
         await update_password(email, generate_password_hash(password))
         request.session.clear()
-        return JSONResponse(content={"message": "Пароль изменён!"},
+        return JSONResponse(content={"message": "Пароль обновлён!"},
                             status_code=200)
     except Exception as ex:
         return JSONResponse(content={"message": str(ex)},
