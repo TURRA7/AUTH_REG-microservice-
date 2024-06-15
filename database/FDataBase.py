@@ -76,7 +76,7 @@ async def add_user(email, login, password) -> None:
 
 
 async def update_password(email, password) -> None:
-    """Изменение пароля пользователя."""
+    """Изменение пароля пользователя по указанной почте."""
     async with AsyncSession(engine) as session:
         async with session.begin():
             user = await session.execute(

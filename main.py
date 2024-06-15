@@ -22,6 +22,6 @@ app.add_middleware(SessionMiddleware, secret_key=SECRET_KEY,
 
 if __name__ == "__main__":
     loop = asyncio.get_event_loop()
-    loop.run_until_complete(create_tables())
+    loop.run_until_complete(delete_tables())
 
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
