@@ -5,6 +5,7 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from fastapi import APIRouter, Form, Request
 from fastapi.templating import Jinja2Templates
 from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi_cache.decorator import cache
 
 from config import SESSION_STATE_CODE, SESSION_STATE_MAIL
 from database.FDataBase import (select_by_user, select_by_email,
@@ -22,6 +23,13 @@ app_auth = APIRouter(prefix="/authorization")
 app_logout = APIRouter(prefix="/logout")
 
 
+@cache(expire=60)
+async def get_rendered_template(template_name: str, context: dict) -> str:
+    """Функция рендерит html шаблон в строку и кэширует его."""
+    template = templates.get_template(template_name)
+    return template.render(context)
+
+
 @app_reg.get("/", response_class=HTMLResponse)
 async def template_reg(request: Request) -> HTMLResponse:
     """
@@ -30,7 +38,9 @@ async def template_reg(request: Request) -> HTMLResponse:
     return:
         Возвращает отрендареный шаблон
     """
-    return templates.TemplateResponse("reg/reg.html", {"request": request})
+    context = {"request": request}
+    html_content = await get_rendered_template("reg/reg.html", context)
+    return HTMLResponse(content=html_content)
 
 
 @app_reg.get("/confirm", response_class=HTMLResponse)
@@ -41,8 +51,9 @@ async def template_confirm(request: Request) -> HTMLResponse:
     return:
         Возвращает отрендареный шаблон
     """
-    return templates.TemplateResponse(
-        "confirm/confirm.html", {"request": request})
+    context = {"request": request}
+    html_content = await get_rendered_template("confirm/confirm.html", context)
+    return HTMLResponse(content=html_content)
 
 
 @app_auth.get("/", response_class=HTMLResponse)
@@ -53,7 +64,9 @@ async def template_auth(request: Request) -> HTMLResponse:
     return:
         Возвращает отрендареный шаблон
     """
-    return templates.TemplateResponse("auth/auth.html", {"request": request})
+    context = {"request": request}
+    html_content = await get_rendered_template("auth/auth.html", context)
+    return HTMLResponse(content=html_content)
 
 
 @app_auth.get("/verification", response_class=HTMLResponse)
@@ -64,8 +77,10 @@ async def template_verification(request: Request) -> HTMLResponse:
     return:
         Возвращает отрендареный шаблон
     """
-    return templates.TemplateResponse(
-        "verification/verification.html", {"request": request})
+    context = {"request": request}
+    html_content = await get_rendered_template(
+        "verification/verification.html", context)
+    return HTMLResponse(content=html_content)
 
 
 @app_auth.get("/recover", response_class=HTMLResponse)
@@ -76,8 +91,10 @@ async def template_recover(request: Request) -> HTMLResponse:
     return:
         Возвращает отрендареный шаблон
     """
-    return templates.TemplateResponse(
-        "recover/recover.html", {"request": request})
+    context = {"request": request}
+    html_content = await get_rendered_template(
+        "recover/recover.html", context)
+    return HTMLResponse(content=html_content)
 
 
 @app_auth.get("/recover/reset_code", response_class=HTMLResponse)
@@ -88,8 +105,10 @@ async def template_reset_code(request: Request) -> HTMLResponse:
     return:
         Возвращает отрендареный шаблон
     """
-    return templates.TemplateResponse(
-        "reset_code/reset_code.html", {"request": request})
+    context = {"request": request}
+    html_content = await get_rendered_template(
+        "reset_code/reset_code.html", context)
+    return HTMLResponse(content=html_content)
 
 
 @app_auth.get("/recover/reset_code/change_password",
@@ -101,8 +120,10 @@ async def template_change_password(request: Request) -> HTMLResponse:
     return:
         Возвращает отрендареный шаблон
     """
-    return templates.TemplateResponse(
-        "change_password/change_password.html", {"request": request})
+    context = {"request": request}
+    html_content = await get_rendered_template(
+        "change_password/change_password.html", context)
+    return HTMLResponse(content=html_content)
 
 
 @app_reg.post("/")
@@ -283,11 +304,11 @@ async def recover(request: Request,
 
     return:
         1. Проверяем что введённый данные, являются почтой
-        2. Передаём в сессию код сессии, указанный в переменной 
+        2. Передаём в сессию код сессии, указанный в переменной
         окружения SESSION_STATE_MAIL
         3. Генерируем код(code), передаём в сессию введённую почту
         и пароль
-        4. Отправляем на указанную почту код(code) с помощью 
+        4. Отправляем на указанную почту код(code) с помощью
         шаблона t_recover.txt
         5. Возвращаем соответствующий JSONResponse ответ.
     """
@@ -331,7 +352,7 @@ async def reset_code(request: Request,
 
     return:
         1. Проверяем состояние сессии
-        2. Получаем код(verification_code) из сессии и 
+        2. Получаем код(verification_code) из сессии и
         сверяем его с кодом(code) введённым пользователем в сессии
         3. Удаялем старое состояние сессии указанное в SESSION_STATE_MAIL
         4. Задаём новое состояние сесиии SESSION_STATE_CODE
@@ -370,7 +391,7 @@ async def change_password(request: Request,
     return:
         1. Проверяем состояние сессии
         2. Получаем из сессии почту и изменяем пароль в update_password
-        с указанием почты и пароля из формы в виде хэща 
+        с указанием почты и пароля из формы в виде хэща
         с помощью generate_password_hash(password)
         3. Возвращаем JSONResponse ответ
     """

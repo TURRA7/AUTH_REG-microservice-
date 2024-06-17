@@ -12,6 +12,7 @@ from starlette.middleware.sessions import SessionMiddleware
 from api.api import app_auth, app_reg
 from config import SECRET_KEY, SENTRY_DNS
 from database.FDataBase import create_tables, delete_tables
+from redis_tools.redis_tools import lifespan
 
 
 sentry_sdk.init(
@@ -23,7 +24,7 @@ sentry_sdk.init(
 )
 
 
-app = FastAPI()
+app = FastAPI(lifespan=lifespan)
 
 app.include_router(app_reg)
 app.include_router(app_auth)
