@@ -3,49 +3,22 @@ from typing import Annotated
 from werkzeug.security import generate_password_hash, check_password_hash
 
 from fastapi import APIRouter, Form, Request
-from fastapi.templating import Jinja2Templates
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import JSONResponse
 from fastapi_cache.decorator import cache
 
 from config import SESSION_STATE_CODE, SESSION_STATE_MAIL
 from database.FDataBase import (select_by_user, select_by_email,
                                 add_user, update_password)
 from e_mails.send_letters import send_email
+from link_backend_frontend.link_BF import TemplateHandler
 
 
-# Указываем папку для чтения html шаблонов
-templates = Jinja2Templates(directory="templates")
 # Роутеры, для формы регистрации
 app_reg = APIRouter(prefix="/registration")
 # Роутеры, для формы авторизации
 app_auth = APIRouter(prefix="/authorization")
 # Роутеры для логаута
 app_logout = APIRouter(prefix="/logout")
-
-
-# Класс рендеринга html шаблонов(позже не вносить в репозиторий с API)
-class TemplateHandler:
-    """Инициализация необходимых параметров."""
-    def __init__(self, router: APIRouter, route: str, template_path: str):
-        self.router = router
-        self.route = route
-        self.template_path = template_path
-        self.router.add_api_route(self.route, self.handler_request,
-                                  methods=["GET"], response_class=HTMLResponse)
-
-    @cache(expire=60)
-    async def get_rendered_template(self, template_name: str,
-                                    context: dict) -> str:
-        """Метод рендерит html шаблон в строку и кэширует его."""
-        template = templates.get_template(template_name)
-        return template.render(context)
-
-    async def handler_request(self, request: Request) -> HTMLResponse:
-        """Метод возвращает отрендеренный шаблон"""
-        context = {"request": request}
-        html_content = await self.get_rendered_template(
-            self.template_path, context)
-        return HTMLResponse(content=html_content)
 
 
 # Маршруты класса TemplateHandler(позже не вносить в репозиторий с API):
