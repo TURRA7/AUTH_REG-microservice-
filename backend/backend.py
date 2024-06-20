@@ -1,0 +1,158 @@
+"""Моудль backand проекта."""
+
+import ssl
+import smtplib
+import random
+from string import Template
+from werkzeug.security import generate_password_hash, check_password_hash
+
+from database.FDataBase import add_user, select_by_email, select_by_user
+from config import WOKR_EMAIL, WOKR_EMAIL_PASS, WOKR_PORT, WORK_HOSTNAME
+
+
+async def send_email(email: str, message: str, context: str):
+    """
+    Функция отправляет пользователю сообщение на почту.
+
+    args:
+        context_ssl: представляет собой контекст для SSL
+    """
+    context_ssl = ssl.create_default_context()
+    try:
+        with smtplib.SMTP_SSL(WORK_HOSTNAME, WOKR_PORT,
+                              context=context_ssl, timeout=2) as server:
+            server.login(WOKR_EMAIL, WOKR_EMAIL_PASS)
+            message = Template(message).substitute(context)
+            server.sendmail(WOKR_EMAIL, email, message.encode('utf-8'))
+    except smtplib.SMTPRecipientsRefused as ex:
+        print(f"SMTPRecipientsRefused error: {ex}")
+        raise
+    except smtplib.SMTPServerDisconnected as ex:
+        print(f"SMTPServerDisconnected error: {ex}")
+        raise
+    except smtplib.SMTPException as ex:
+        print(f"SMTP error: {ex}")
+        raise
+    except Exception as ex:
+        print(f"General error: {ex}")
+        raise
+
+
+class Registration:
+    """Работа с регистрацией на маршрутах POST."""
+
+    @staticmethod
+    async def register(email: str, login: str, password: str) -> dict:
+        """
+        Обработка логики регистрации.
+
+        args:
+            user_log: Получение юзера по логину
+            user_mail: Получение юзера по почте
+            code: Сгенерированный 4х значный код
+            email, login, password: Данные из формы полученые от API
+
+        return:
+            1. Получаем юзера по почте user_mail и логину user_log,
+            2. Проверяем наличие юзера БД.
+            3. Если пользователь присутствует:
+            В состояния сессии, передаётся: email, login, password,
+            code(одноразовый 4х значный код). В блоке try - выполняется
+            получение шаблона, далее на указаную почту,
+            отправляется код(code) и возвращается
+            соответствующий JSONResponse ответ.
+        """
+        user_log = await select_by_user(login)
+        user_mail = await select_by_email(email)
+        if user_log or user_mail:
+            return {"message": "Пользователь с таким логином или почтой, уже существует!",
+                    "status_code": 400}
+        code = random.randint(1000, 9999)
+        with open('template_message/t_code.txt',
+                  'r', encoding='utf-8') as file:
+            content = file.read()
+        await send_email(email, content, {'code': code})
+        return {"email": email, "login": login,
+                "password": password, "code": code}
+
+    @staticmethod
+    async def confirm_register(email: str, login: str,
+                               password: str, code: str,
+                               verification_code: str) -> dict:
+        """
+        Обработка формы ввода 'кода подтверждения регистрации'.
+        password: Пароль из формы.
+        verification_code: Код из сессии, созданый в функции registration
+        code: данные из формы
+
+        return:
+            1. Получаются данные из сессии
+            2. Проверка введённого кода с кодом сохранённым в сессии
+            3. Добавление пользователя в базу данных функцией
+            add_user(пароль с помощью generate_password_hash() передаётся
+            в виде хэша)
+            4. Очистка сессии
+            5. Передача соответствующего JSONResponse ответа
+        """
+        if str(code) == str(verification_code):
+            await add_user(email, login, generate_password_hash(password))
+            return {"message": "Введенный код верный!", "status_code": 200}
+        else:
+            return {"message": "Введенный код неверный!", "status_code": 400}
+
+
+class Authorization:
+    """Работа с авторизацией на маршрутах POST."""
+
+    @staticmethod
+    async def authorization(login: str, password: str) -> dict:
+        """
+        Обработка логики авторизации.
+
+        args:
+            login, password = Данные из формы полученые от API
+            user: Получение пользователя из базы данных по логину или почте
+            code: Одноразовый 4х значный, сгенерированный код
+
+        return:
+            1. Присваивает переменной user результат получения данных из базы
+            с логином или паролем
+            2. Проводит аутентификацию по логину и паролю.
+            3. Если 2 пункт выполнен, генерирует код, отправляет его на почту
+            4. Возвращает dict в зависимости от результата выполнения функций
+        """
+        if "@" in login:
+            user = await select_by_email(login)
+        else:
+            user = await select_by_user(login)
+        if not user or not check_password_hash(user[0].password, password):
+            return {"message": "Неверный логин или пароль!",
+                    "status_code": 400}
+        else:
+            code = random.randint(1000, 9999)
+            try:
+                with open('template_message/t_pass.txt',
+                          'r', encoding='utf-8') as file:
+                    content = file.read()
+                await send_email(user[0].email, content, {'code': code})
+                return {"login": login, "code": code, "status_code": 200}
+            except Exception as ex:
+                return {"message": str(ex), "status_code": 400}
+
+    @staticmethod
+    async def confirm_auth(code: str, verification_code: str) -> dict:
+        """
+        Метод подтверждения авторизации, по введенному коду.
+
+        args:
+            verification_code: Код полученный из сессии.
+            code: Данные из формы
+
+        return:
+            Возвращает результат сравнения verification_code и code,
+            в виде dict
+        """
+        if str(code) == str(verification_code):
+            return {"message": "Авторизация удалась!", "status_code": 200}
+        else:
+            return {"message": "Введенный код неверный!", "status_code": 400}

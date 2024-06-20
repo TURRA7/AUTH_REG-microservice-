@@ -6,10 +6,11 @@ from fastapi import APIRouter, Form, Request
 from fastapi.responses import JSONResponse
 from fastapi_cache.decorator import cache
 
+from backend.backend import Authorization, Registration
 from config import SESSION_STATE_CODE, SESSION_STATE_MAIL
 from database.FDataBase import (select_by_user, select_by_email,
                                 add_user, update_password)
-from e_mails.send_letters import send_email
+from backend.backend import send_email
 from link_backend_frontend.link_BF import TemplateHandler
 
 
@@ -49,77 +50,53 @@ async def registration(request: Request,
                        password_two: Annotated[str, Form()]
                        ) -> JSONResponse:
     """
-    Обработка логики регистрации.
+    Обработка регистрации.
 
     args:
-        user_log: Получение юзера по логину
-        user_mail: Получение юзера по почте
-        code: Сгенерированный 4х значный код
-        email, login, password, password_two: данные из формы
-        *password, password_two(пароль/повтор пароля)
+        result: Обработка пользователя: добавление в БД,
+        отправка кода на почту
 
     return:
-        1. Получаем юзера по почте user_mail и логину user_log,
-        2. Проверяем наличие юзера БД.
-        3. Если пользователь присутствует:
-        В состояния сессии, передаётся: email, login, password,
-        code(одноразовый 4х значный код). В блоке try - выполняется получение
-        шаблона, далее на указаную почту, отправляется код(code) и возвращается
-        соответствующий JSONResponse ответ.
+        Возвращает готовый JSONResponse ответ с
+        состоянием добавления пользователя
     """
-    user_log = await select_by_user(login)
-    user_mail = await select_by_email(email)
-    if user_log or user_mail:
-        return JSONResponse(
-            content={"message": "Пользователь с таким логином или почтой, уже существует!"},
-            status_code=400)
-    code = random.randint(1000, 9999)
+    result = await Registration.register(email, login, password)
     request.session['email'] = email
     request.session['login'] = login
     request.session['password'] = password
-    request.session['code'] = code
-    try:
-        with open('template_message/t_code.txt',
-                  'r', encoding='utf-8') as file:
-            content = file.read()
-        await send_email(email, content, {'code': code})
-        return JSONResponse(content={"key": email},
-                            status_code=200)
-    except Exception as ex:
-        return JSONResponse(content={"message": ex},
-                            status_code=400)
+    request.session['code'] = result['code']
+    return JSONResponse(content={"key": result["email"]}, status_code=200)
 
 
 @app_reg.post("/confirm")
 async def confirm(request: Request,
                   code: Annotated[str, Form()]) -> JSONResponse:
     """
-    Подтверждение регисcodeз формы.
-        password: Пароль из формы.
-        verification_code: Код из сессии, созданый в функции registration
-        code: данные из формы
+    Обработка формы ввода 'кода подтверждения регистрации'.
+
+    args:
+        email, login, password, verification_code: Данные из сессии
+        добавленные в на шаге регистрации
+        result: Обработка ввода и подтверждение кода
 
     return:
-        1. Получаются данные из сессии
-        2. Проверка введённого кода с кодом сохранённым в сессии
-        3. Добавление пользователя в базу данных функцией
-        add_user(пароль с помощью generate_password_hash() передаётся
-        в виде хэша)
-        4. Очистка сессии
-        5. Передача соответствующего JSONResponse ответа
+        Возвращает готовый JSONResponse ответ с
+        состоянием добавления пользователя
     """
     email = request.session.get('email')
     login = request.session.get('login')
     password = request.session.get('password')
     verification_code = request.session.get('code')
-    if str(code) == str(verification_code):
-        await add_user(email, login, generate_password_hash(password))
+    result = await Registration.confirm_register(
+        email, login, password, code, verification_code)
+    if result['status_code'] == 200:
         request.session.clear()
-        return JSONResponse(content={"message": "Введенный код верный!"},
-                            status_code=200)
+        response = JSONResponse(content={"message": result["message"]},
+                                status_code=200)
     else:
-        return JSONResponse(content={"message": "Введенный код неверный!"},
-                            status_code=400)
+        response = JSONResponse(content={"message": result["message"]},
+                                status_code=400)
+    return response
 
 
 @app_auth.post("/")
@@ -139,71 +116,47 @@ async def authorization(request: Request,
         remember_me: положение флажка 'запомнить меня' в форме
 
     return:
-        1. Присваиваем переменной user, результат получения данных из БД,
-        в зависимости от того, введён логин или почта
-        2. Далее проверяем, соответствует ли пароль, указанному пользователю
-        3. Если указывает, создаём и сохраняем 4х значный код (code) в сессии
-        4. Отправляет код(code) на почту пользователя по шаблону t_pass.txt
-        5. Устанавливаем в response JSONResponse ответ, а так же присваиваем
-        куки, если значение 'запомнить меня'(remember_me) задействовано,
-        возврашаем ответ с куками.
+        Возвращает готовый JSONResponse ответ удачным или неудачным
+        статусом авторизации, а так же сохраняет код отправленный на почту
+        в сессию и задаёт куки для флага "запомнить меня"
     """
-    if "@" in login:
-        user = await select_by_email(login)
+    result = await Authorization.authorization(login, password)
+    if result['status_code'] == 200:
+        request.session['code'] = result['code']
+        response = JSONResponse(content={"key": result["login"]},
+                                status_code=200)
     else:
-        user = await select_by_user(login)
-    if not user or not check_password_hash(user[0].password, password):
-        return JSONResponse(content={"message": "Неверный логин или пароль!"},
-                            status_code=400)
-    else:
-        code = random.randint(1000, 9999)
-        request.session['code'] = code
-        try:
-            with open('template_message/t_pass.txt',
-                      'r', encoding='utf-8') as file:
-                content = file.read()
-            await send_email(user[0].email, content, {'code': code})
-            response = JSONResponse(content={"key": user[0].email},
-                                    status_code=200)
-            if remember_me:
-                # Устанавливаем cookie для запоминания пользователя
-                response.set_cookie(key="remember_me", value="true",
-                                    max_age=30*24*60*60)
-                # Здесь логика запоминания например, через JWT токены и т.д.
-            return response
-        except Exception as ex:
-            return JSONResponse(content={"message": str(ex)},
-                                status_code=400)
+        response = JSONResponse(content={"message": result["message"]},
+                                status_code=result['status_code'])
+    if remember_me:
+        result.set_cookie(key="remember_me", value="true", max_age=30*24*60*60)
+    return response
 
 
 @app_auth.post("/verification")
 async def verification(request: Request,
                        code: Annotated[str, Form()]) -> JSONResponse:
     """
-    Функция подтверждения авторизации, по введенному коду.
-
-    Сессия очищается после 6х минут, если код вводится не верный.
+    Обработка формы ввода 'кода подтверждения авторизации'.
 
     args:
-        verification_code: Код полученный из сессии.
         code: Данные из формы
+        result: Обработка ввода и подтверждение кода
 
     return:
-        1. Получаем код(verification_code) из сессии
-        2. Сверяем код из сессии, с введённым в форме (code)
-        3. Если код верный, очищаем сессию, производим аутентификацию
-        и атворизацию
-        4. Если код неверный, возвращаем соответствующий JSONResponse ответ
+        Возвращает готовый JSONResponse ответ с
+        состоянием авторизации
     """
     verification_code = request.session.get('code')
-
-    if str(code) == str(verification_code):
+    result = await Authorization.confirm_auth(code, verification_code)
+    if result['status_code'] == 200:
         request.session.clear()
-        return JSONResponse(content={"message": "Авторизация удалась!"},
-                            status_code=200)
+        response = JSONResponse(content={"message": result["message"]},
+                                status_code=result['status_code'])
     else:
-        return JSONResponse(content={"message": "Введенный код неверный!"},
-                            status_code=400)
+        response = JSONResponse(content={"message": result["message"]},
+                                status_code=result['status_code'])
+    return response
 
 
 @app_auth.post("/recover")
