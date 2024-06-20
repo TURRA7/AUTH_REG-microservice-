@@ -6,7 +6,8 @@ import random
 from string import Template
 from werkzeug.security import generate_password_hash, check_password_hash
 
-from database.FDataBase import add_user, select_by_email, select_by_user
+from database.FDataBase import (
+    add_user, select_by_email, select_by_user, update_password)
 from config import WOKR_EMAIL, WOKR_EMAIL_PASS, WOKR_PORT, WORK_HOSTNAME
 
 
@@ -119,7 +120,8 @@ class Authorization:
             с логином или паролем
             2. Проводит аутентификацию по логину и паролю.
             3. Если 2 пункт выполнен, генерирует код, отправляет его на почту
-            4. Возвращает dict в зависимости от результата выполнения функций
+            4. Метод возвращает dict в зависимости от
+            результата выполнения функций
         """
         if "@" in login:
             user = await select_by_email(login)
@@ -149,10 +151,84 @@ class Authorization:
             code: Данные из формы
 
         return:
-            Возвращает результат сравнения verification_code и code,
-            в виде dict
+            Метод возвращает результат сравнения verification_code
+            и code, в виде dict
         """
         if str(code) == str(verification_code):
             return {"message": "Авторизация удалась!", "status_code": 200}
         else:
             return {"message": "Введенный код неверный!", "status_code": 400}
+
+
+class PasswordRecovery:
+    """Работа с восстановлением пароля на маршрутах POST."""
+
+    @staticmethod
+    async def recover_pass(user: str):
+        """
+        Обработка логики восстановление пароля.
+
+        args:
+            user: почта пользователя
+
+        return:
+            1. Проверяет, явлеются ли введённые данные почтой
+            2. В переменную result передаются данные пользователя из БД
+            3. Генерируется 4х значный код
+            4. На указаную почту отправляется код с выбранным шаблоном
+            5. Далее метод возвращает dict с кодом, почтой и статус-кодом
+        """
+        if "@" not in user:
+            return {"message": "Укажите почту, а не логин!",
+                    "status_code": 400}
+        else:
+            result = await select_by_email(user)
+            if not result:
+                return {"message": "Пользователь не существует!",
+                        "status_code": 400}
+            else:
+                try:
+                    code = random.randint(1000, 9999)
+                    with open('template_message/t_recover.txt',
+                              'r', encoding='utf-8') as file:
+                        content = file.read()
+                    await send_email(user, content, {'code': code})
+                    return {"code": code, "user": user, "status_code": 200}
+                except Exception as ex:
+                    return {"message": str(ex), "status_code": 400}
+
+    @staticmethod
+    async def confirm_recover(code: str, verification_code: str):
+        """
+        Подтверждение восстановления, кодом с почты.
+
+        args:
+            code: Код из формы, полученный с API
+            verification_code: Код полученный из сессии
+
+        return:
+            1. Проверяет коды на соответствие
+            2. Метод возвращает dict с сообщением и статус-кодом
+        """
+        if str(code) == str(verification_code):
+            return {"message": "Можете менять пароль!", "status_code": 200}
+        else:
+            return {"message": "Введенный код неверный!", "status_code": 400}
+
+    @staticmethod
+    async def new_password(email: str, password: str):
+        """
+        Функция восствновления пароля(изменение пароля).
+
+        args:
+            email, password: Данные, получены из формы с API
+
+        return:
+            1. Введённый пароль обновляется
+            2. Метод возвращает dict с сообщением и статус-кодом
+        """
+        try:
+            await update_password(email, generate_password_hash(password))
+            return {"message": "Пароль обновлён!", "status_code": 200}
+        except Exception as ex:
+            return {"message": ex, "status_code": 400}

@@ -1,16 +1,10 @@
-import random
 from typing import Annotated
-from werkzeug.security import generate_password_hash, check_password_hash
 
 from fastapi import APIRouter, Form, Request
 from fastapi.responses import JSONResponse
-from fastapi_cache.decorator import cache
 
-from backend.backend import Authorization, Registration
+from backend.backend import Authorization, PasswordRecovery, Registration
 from config import SESSION_STATE_CODE, SESSION_STATE_MAIL
-from database.FDataBase import (select_by_user, select_by_email,
-                                add_user, update_password)
-from backend.backend import send_email
 from link_backend_frontend.link_BF import TemplateHandler
 
 
@@ -163,79 +157,65 @@ async def verification(request: Request,
 async def recover(request: Request,
                   user: Annotated[str, Form()]) -> JSONResponse:
     """
-    Функция восствновления пароля(ввод почты).
+    Обработчик логики восстановления(изменения) пароля.
 
     args:
-        result: Пользователь из бады данных
-        code: Сгенерированный 4х значный код
         user: Данные из формы (введённая почта)
+        response: JSONResponse ответ
 
     return:
-        1. Проверяем что введённый данные, являются почтой
-        2. Передаём в сессию код сессии, указанный в переменной
-        окружения SESSION_STATE_MAIL
-        3. Генерируем код(code), передаём в сессию введённую почту
-        и пароль
-        4. Отправляем на указанную почту код(code) с помощью
-        шаблона t_recover.txt
-        5. Возвращаем соответствующий JSONResponse ответ.
+        По результатам обновления пароля, возвращает
+        соответствующий JSONResponse ответ, так же сессии
+        задаётся индификатор SESSION_STATE_MAIL
     """
-    if "@" in user:
-        result = await select_by_email(user)
-        if not result:
-            return JSONResponse(
-                content={"message": "Пользователь не существует!"},
-                status_code=400)
-        else:
-            try:
-                request.session['state'] = SESSION_STATE_MAIL
-                code = random.randint(1000, 9999)
-                request.session['code'] = code
-                request.session['email'] = user
-                with open('template_message/t_recover.txt',
-                          'r', encoding='utf-8') as file:
-                    content = file.read()
-                await send_email(user, content, {'code': code})
-                return JSONResponse(content={"key": user},
-                                    status_code=200)
-            except Exception as ex:
-                return JSONResponse(content={"message": str(ex)},
-                                    status_code=400)
+    result = await PasswordRecovery.recover_pass(user)
+    if result['status_code'] == 200:
+        request.session['state'] = SESSION_STATE_MAIL
+        request.session['code'] = result['code']
+        request.session['email'] = result['user']
+        response = JSONResponse(content={"user": result["user"]},
+                                status_code=result['status_code'])
     else:
-        return JSONResponse(content={"message": "Укажите почту, а не логин!"},
-                            status_code=400)
+        response = JSONResponse(content={"message": result["message"]},
+                                status_code=result['status_code'])
+    return response
 
 
 @app_auth.post("/recover/reset_code")
 async def reset_code(request: Request,
                      code: Annotated[str, Form()]) -> JSONResponse:
     """
-    Функция восствновления пароля(ввод кода из почты).
+    Подтверждение восстановления, кодом с почты.
 
     Сессия очищается после 6х минут, если код вводится не верный.
 
     args:
-        verification_code: Код полученный из сессии.
         code: Данные из формы
+        verification_code: Код полученный из сессии
+        response: JSONResponse ответ
 
     return:
-        1. Проверяем состояние сессии
-        2. Получаем код(verification_code) из сессии и
+        1. Проверяет состояние сессии
+        2. Получает код(verification_code) из сессии и
         сверяем его с кодом(code) введённым пользователем в сессии
-        3. Удаялем старое состояние сессии указанное в SESSION_STATE_MAIL
-        4. Задаём новое состояние сесиии SESSION_STATE_CODE
-        5. Возвращаем JSONResponse ответ
+        3. Коды сверяются в функции confirm_recover(), если
+        проверка пройдена, старый индификатор сессии удаляется,
+        на его место ставится новый SESSION_STATE_CODE
+        4. Функция возвращает соответствующий JSONResponse ответ
     """
     if request.session.get('state') == SESSION_STATE_MAIL:
         verification_code = request.session.get('code')
-        if str(code) == str(verification_code):
+        result = await PasswordRecovery.confirm_recover(
+            code, verification_code)
+        if result['status_code'] == 200:
             del request.session['state']
             request.session['state'] = SESSION_STATE_CODE
-            return JSONResponse(content={"message": "Можете менять пароль!"},
-                                status_code=200)
+            response = JSONResponse(content={"message": result["message"]},
+                                    status_code=result['status_code'])
         else:
-            return JSONResponse(content={"message": "Введенный код неверный!"},
-                                status_code=400)
+            response = JSONResponse(content={"message": result["message"]},
+                                    status_code=result['status_code'])
+        return response
     else:
         return JSONResponse(content={"message": "Вы не указали почту!"},
                             status_code=400)
@@ -255,24 +235,26 @@ async def change_password(request: Request,
         verification_code: Код полученный из сессии.
         password: Данные из формы(пароль)
         password_two: Данные из формы(повтор пароля)
+        email: Почта пользователя из сессии
+        result: Резуклтат изменения(dict) пароля в базе данных
+        response: JSONResponse ответ
 
     return:
         1. Проверяем состояние сессии
         2. Получаем из сессии почту и изменяем пароль в update_password
-        с указанием почты и пароля из формы в виде хэща
-        с помощью generate_password_hash(password)
-        3. Возвращаем JSONResponse ответ
+        3. Метод возвращает JSONResponse ответ
     """
     if request.session.get('state') == SESSION_STATE_CODE:
-        try:
-            email = request.session.get('email')
-            await update_password(email, generate_password_hash(password))
+        email = request.session.get('email')
+        result = await PasswordRecovery.new_password(email, password)
+        if result['status_code'] == 200:
             request.session.clear()
-            return JSONResponse(content={"message": "Пароль обновлён!"},
-                                status_code=200)
-        except Exception as ex:
-            return JSONResponse(content={"message": str(ex)},
-                                status_code=400)
+            response = JSONResponse(content={"message": result["message"]},
+                                    status_code=result['status_code'])
+        else:
+            response = JSONResponse(content={"message": result["message"]},
+                                    status_code=result['status_code'])
+        return response
     else:
         return JSONResponse(content={"message": "Вы не ввели код!"},
                             status_code=400)
