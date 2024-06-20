@@ -23,107 +23,49 @@ app_auth = APIRouter(prefix="/authorization")
 app_logout = APIRouter(prefix="/logout")
 
 
-@cache(expire=60)
-async def get_rendered_template(template_name: str, context: dict) -> str:
-    """Функция рендерит html шаблон в строку и кэширует его."""
-    template = templates.get_template(template_name)
-    return template.render(context)
+# Класс рендеринга html шаблонов(позже не вносить в репозиторий с API)
+class TemplateHandler:
+    """Инициализация необходимых параметров."""
+    def __init__(self, router: APIRouter, route: str, template_path: str):
+        self.router = router
+        self.route = route
+        self.template_path = template_path
+        self.router.add_api_route(self.route, self.handler_request,
+                                  methods=["GET"], response_class=HTMLResponse)
+
+    @cache(expire=60)
+    async def get_rendered_template(self, template_name: str,
+                                    context: dict) -> str:
+        """Метод рендерит html шаблон в строку и кэширует его."""
+        template = templates.get_template(template_name)
+        return template.render(context)
+
+    async def handler_request(self, request: Request) -> HTMLResponse:
+        """Метод возвращает отрендеренный шаблон"""
+        context = {"request": request}
+        html_content = await self.get_rendered_template(
+            self.template_path, context)
+        return HTMLResponse(content=html_content)
 
 
-@app_reg.get("/", response_class=HTMLResponse)
-async def template_reg(request: Request) -> HTMLResponse:
-    """
-    Обработчик html шаблона регистрации.
-
-    return:
-        Возвращает отрендареный шаблон
-    """
-    context = {"request": request}
-    html_content = await get_rendered_template("reg/reg.html", context)
-    return HTMLResponse(content=html_content)
-
-
-@app_reg.get("/confirm", response_class=HTMLResponse)
-async def template_confirm(request: Request) -> HTMLResponse:
-    """
-    Обработчик html шаблона ввода кода для регистрации.
-
-    return:
-        Возвращает отрендареный шаблон
-    """
-    context = {"request": request}
-    html_content = await get_rendered_template("confirm/confirm.html", context)
-    return HTMLResponse(content=html_content)
-
-
-@app_auth.get("/", response_class=HTMLResponse)
-async def template_auth(request: Request) -> HTMLResponse:
-    """
-    Обработчик html шаблона авторизации.
-
-    return:
-        Возвращает отрендареный шаблон
-    """
-    context = {"request": request}
-    html_content = await get_rendered_template("auth/auth.html", context)
-    return HTMLResponse(content=html_content)
-
-
-@app_auth.get("/verification", response_class=HTMLResponse)
-async def template_verification(request: Request) -> HTMLResponse:
-    """
-    Обработчик html шаблона ввода кода для авторизации.
-
-    return:
-        Возвращает отрендареный шаблон
-    """
-    context = {"request": request}
-    html_content = await get_rendered_template(
-        "verification/verification.html", context)
-    return HTMLResponse(content=html_content)
-
-
-@app_auth.get("/recover", response_class=HTMLResponse)
-async def template_recover(request: Request) -> HTMLResponse:
-    """
-    Обработчик html шаблона восстановления пароля(указание почты).
-
-    return:
-        Возвращает отрендареный шаблон
-    """
-    context = {"request": request}
-    html_content = await get_rendered_template(
-        "recover/recover.html", context)
-    return HTMLResponse(content=html_content)
-
-
-@app_auth.get("/recover/reset_code", response_class=HTMLResponse)
-async def template_reset_code(request: Request) -> HTMLResponse:
-    """
-    Обработчик html шаблона восстановления пароля(ввод кода с почты).
-
-    return:
-        Возвращает отрендареный шаблон
-    """
-    context = {"request": request}
-    html_content = await get_rendered_template(
-        "reset_code/reset_code.html", context)
-    return HTMLResponse(content=html_content)
-
-
-@app_auth.get("/recover/reset_code/change_password",
-              response_class=HTMLResponse)
-async def template_change_password(request: Request) -> HTMLResponse:
-    """
-    Обработчик html шаблона восстановления пароля(ввод нового пароля).
-
-    return:
-        Возвращает отрендареный шаблон
-    """
-    context = {"request": request}
-    html_content = await get_rendered_template(
-        "change_password/change_password.html", context)
-    return HTMLResponse(content=html_content)
+# Маршруты класса TemplateHandler(позже не вносить в репозиторий с API):
+registration_handler = TemplateHandler(
+    router=app_reg, route="/", template_path="reg/reg.html")
+confirm_handler = TemplateHandler(
+    router=app_reg, route="/confirm", template_path="confirm/confirm.html")
+authorization_handler = TemplateHandler(
+    router=app_auth, route="/", template_path="auth/auth.html")
+verification_handler = TemplateHandler(
+    router=app_auth, route="/verification",
+    template_path="verification/verification.html")
+recover_handler = TemplateHandler(
+    router=app_auth, route="/recover", template_path="recover/recover.html")
+reset_code_handler = TemplateHandler(
+    router=app_auth, route="/recover/reset_code",
+    template_path="reset_code/reset_code.html")
+change_password_handler = TemplateHandler(
+    router=app_auth, route="/recover/reset_code/change_password",
+    template_path="change_password/change_password.html")
 
 
 @app_reg.post("/")
