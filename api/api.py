@@ -117,6 +117,7 @@ async def authorization(request: Request,
     result = await Authorization.authorization(login, password)
     if result['status_code'] == 200:
         request.session['code'] = result['code']
+        request.session['login'] = login
         response = JSONResponse(content={"key": result["login"]},
                                 status_code=200)
     else:
@@ -142,10 +143,18 @@ async def verification(request: Request,
         состоянием авторизации
     """
     verification_code = request.session.get('code')
-    result = await Authorization.confirm_auth(code, verification_code)
+    login = request.session.get('login')
+    result = await Authorization.confirm_auth(code, verification_code, login)
     if result['status_code'] == 200:
         request.session.clear()
-        response = JSONResponse(content={"message": result["message"]},
+
+        # Здесь может быть перенаправление на нужный вам микросервис
+        # <--- код --->
+        # Для декодирования токена в другом микросервисе,
+        # а так же для защиты маршрутов, следует применять модуль jwt_tools
+
+        response = JSONResponse(content={"message": result["message"],
+                                         "token": result["token"]},
                                 status_code=result['status_code'])
     else:
         response = JSONResponse(content={"message": result["message"]},

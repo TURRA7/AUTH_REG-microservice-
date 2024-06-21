@@ -8,7 +8,10 @@ from werkzeug.security import generate_password_hash, check_password_hash
 
 from database.FDataBase import (
     add_user, select_by_email, select_by_user, update_password)
-from config import WOKR_EMAIL, WOKR_EMAIL_PASS, WOKR_PORT, WORK_HOSTNAME
+from config import (
+    SECRET_KEY, WOKR_EMAIL, WOKR_EMAIL_PASS,
+    WOKR_PORT, WORK_HOSTNAME)
+from jwt_tools.jwt import create_jwt_token
 
 
 async def send_email(email: str, message: str, context: str):
@@ -142,7 +145,8 @@ class Authorization:
                 return {"message": str(ex), "status_code": 400}
 
     @staticmethod
-    async def confirm_auth(code: str, verification_code: str) -> dict:
+    async def confirm_auth(code: str,
+                           verification_code: str, login: str) -> dict:
         """
         Метод подтверждения авторизации, по введенному коду.
 
@@ -155,7 +159,9 @@ class Authorization:
             и code, в виде dict
         """
         if str(code) == str(verification_code):
-            return {"message": "Авторизация удалась!", "status_code": 200}
+            token = create_jwt_token(login, 12, SECRET_KEY)
+            return {"message": "Авторизация удалась!",
+                    "token": token, "status_code": 200}
         else:
             return {"message": "Введенный код неверный!", "status_code": 400}
 
