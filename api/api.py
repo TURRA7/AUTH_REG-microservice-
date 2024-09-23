@@ -238,13 +238,13 @@ async def recover(data: Recover) -> JSONResponse:
     result = await PasswordRecovery.recover_pass(data.user)
     data_redis = {
         'state': SESSION_STATE_MAIL,
-        'code': result['code'],
         'user': data.user
         }
     if result['status_code'] == 200:
-        redis_client.set(data.user, json.dumps(data_redis))
+        redis_client.set(result['code'], json.dumps(data_redis))
         response = JSONResponse(
-            content={"message": "Теперь введите код с почты..."},
+            content={"message": "Теперь введите код с почты...",
+                     "user": str(data.user)},
             status_code=200)
     else:
         response = JSONResponse(content={"message": result["message"]},
@@ -260,7 +260,6 @@ async def reset_code(data: CodeConfirm) -> JSONResponse:
     Args:
 
         code: Код из из почты.
-        login: Логин/почта введённая в предыдущем шаге /recover.
 
     Returns:
 
@@ -272,42 +271,37 @@ async def reset_code(data: CodeConfirm) -> JSONResponse:
     Notes:
 
         1. Валидирует данные
-        2. По логину/почте введённой в предыдущем шаге /recover,
-        достаёт данные из Redis.
+        2. По коду с почты, достаёт данные из Redis.
         3. Сверяет идентификатор сессии, с идентификатором из Redis.
         4. Сверяет код из почты, с кодом из хранилища Redis.
         5. Сохраняет идентификатор сессии и пользователя, во временное
-        хранилище Redis, по логину/почте введённым в шаге /recover.
+        хранилище Redis, по логину/почте введённым в шаге /recover,
+        этот параметр передаются в теле успешного(код 200) ответа от /recover.
         6. Очищает старые временные данные в Redis.
 
         * Сессия очищается через 6 минут, если код неверный. Время изменяется
         в переменных окружения.
     """
-    try:
-        user_data = redis_client.get(data.login)
-        user_data = json.loads(user_data.decode('utf-8'))
-        if isinstance(user_data, JSONResponse):
-            return user_data
-        state = user_data.get('state')
-        verification_code = user_data.get('code')
-        user = user_data.get('user')
-    except Exception as e:
-        return JSONResponse(content={"message": str(e)}, status_code=400)
+    if not redis_client.exists(data.code):
+        response = JSONResponse(
+            content={"message": "Введённый код не верный!"},
+            status_code=400)
+    user_data = redis_client.get(data.code)
+    user_data = json.loads(user_data.decode('utf-8'))
+    if isinstance(user_data, JSONResponse):
+        return user_data
+    state = user_data.get('state')
+    user = user_data.get('user')
 
     if state == SESSION_STATE_MAIL:
-        if str(verification_code) == str(data.code):
-            data_redis = {
-                "state": SESSION_STATE_CODE,
-                'user': user
-                }
-            redis_client.set(user, json.dumps(data_redis))
-            response = JSONResponse(
-                content={"message": "Можете менять пароль!"}, status_code=200)
-            redis_client.delete(f"login:{user}")
-        else:
-            response = JSONResponse(
-                content={"message": "Введенный код неверный!"},
-                status_code=400)
+        data_redis = {
+            "state": SESSION_STATE_CODE,
+            'user': user
+            }
+        redis_client.set(user, json.dumps(data_redis))
+        response = JSONResponse(
+            content={"message": "Можете менять пароль!"}, status_code=200)
+        redis_client.delete(f"login:{data.code}")
         return response
     else:
         return JSONResponse(content={"message": "Вы не указали почту!"},
@@ -344,15 +338,12 @@ async def change_password(data: PasswordChange) -> JSONResponse:
         * Сессия очищается через 6 минут, если код неверный. Время изменяется
         в переменных окружения.
     """
-    try:
-        user_data = redis_client.get(data.user)
-        user_data = json.loads(user_data.decode('utf-8'))
-        if isinstance(user_data, JSONResponse):
-            return user_data
-        state = user_data.get('state')
-        user = user_data.get('user')
-    except Exception as e:
-        return JSONResponse(content={"message": str(e)}, status_code=400)
+    user_data = redis_client.get(data.user)
+    user_data = json.loads(user_data.decode('utf-8'))
+    if isinstance(user_data, JSONResponse):
+        return user_data
+    state = user_data.get('state')
+    user = user_data.get('user')
 
     if state == SESSION_STATE_CODE:
         result = await PasswordRecovery.new_password(user, data.password,

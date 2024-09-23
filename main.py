@@ -1,5 +1,4 @@
 import asyncio
-from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 from sentry_sdk.integrations.asgi import SentryAsgiMiddleware

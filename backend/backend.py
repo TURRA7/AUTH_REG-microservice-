@@ -4,6 +4,7 @@ import ssl
 import re
 import smtplib
 import random
+import string
 from string import Template
 from werkzeug.security import generate_password_hash, check_password_hash
 
@@ -11,8 +12,20 @@ from database.FDataBase import (
     add_user, select_by_email, select_by_user, update_password)
 from config import (
     WOKR_EMAIL, WOKR_EMAIL_PASS,
-    WOKR_PORT, WORK_HOSTNAME)
+    WOKR_PORT, WORK_HOSTNAME, GENERATION_STRING_LENGTH)
 from redis_tools.redis_tools import redis_client
+
+
+async def generate_random_string(length):
+    """
+    Генерирует строку с набором случайных символов.
+
+    Args:
+
+        length: кол-во символов в строке.
+    """
+    characters = string.ascii_letters + string.digits + string.punctuation
+    return ''.join(random.choice(characters) for _ in range(length))
 
 
 async def is_valid_email(email) -> bool:
@@ -20,9 +33,11 @@ async def is_valid_email(email) -> bool:
     Проверяет, является ли строка допустимым email адресом.
 
     Args:
+
         email (str): Строка для проверки.
 
     Returns:
+
         bool: True, если строка соответствует формату email, иначе False.
     """
     email_regex = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
@@ -37,17 +52,20 @@ async def send_email(email: str, message: str, context: str):
     Функция отправляет пользователю сообщение на почту.
 
     Args:
+
         email (str): Адрес электронной почты получателя.
         message (str): Текст сообщения для отправки.
         context (str): Контекст для подстановки в шаблон сообщения.
 
     Raises:
+
         smtplib.SMTPRecipientsRefused: Если сервер почты отклонил получателей.
         smtplib.SMTPServerDisconnected: Если сервер почты отключил соединение.
         smtplib.SMTPException: Для общих ошибок SMTP.
         Exception: Возможны другие неуказанные ошибки.
 
     Notes:
+
         Функция использует SMTP_SSL для отправки сообщения.
         Использует предоставленный контекст для SSL.
         Шаблонизирует сообщение с использованием контекста перед отправкой.
@@ -115,7 +133,7 @@ class Registration:
                 return {"message": ("Пользователь с таким логином"
                                     "или почтой, уже существует!"),
                         "status_code": 400}
-            code = random.randint(1000, 9999)
+            code = await generate_random_string(GENERATION_STRING_LENGTH)
             with open('template_message/t_code.txt',
                       'r', encoding='utf-8') as file:
                 content = file.read()
@@ -185,7 +203,7 @@ class Authorization:
             return {"message": "Неверный логин или пароль!",
                     "status_code": 400}
         else:
-            code = random.randint(1000, 9999)
+            code = await generate_random_string(GENERATION_STRING_LENGTH)
             try:
                 with open('template_message/t_pass.txt',
                           'r', encoding='utf-8') as file:
@@ -205,15 +223,18 @@ class PasswordRecovery:
         Обработка логики восстановления пароля.
 
         Args:
+
             user (str): Адрес электронной почты пользователя.
 
         Returns:
+
             dict: Результат восстановления пароля.
             - "code" (int): Одноразовый четырехзначный код для подтверждения.
             - "user" (str): Адрес электронной почты пользователя.
             - "status_code" (int): Код статуса операции.
 
         Notes:
+
             - Проверяет существование пользователя в базе данных.
             - Генерирует и отправляет код подтверждения на указанный email.
         """
@@ -226,7 +247,7 @@ class PasswordRecovery:
                     "status_code": 400}
         else:
             try:
-                code = random.randint(1000, 9999)
+                code = await generate_random_string(GENERATION_STRING_LENGTH)
                 with open('template_message/t_recover.txt',
                           'r', encoding='utf-8') as file:
                     content = file.read()
@@ -242,16 +263,19 @@ class PasswordRecovery:
         Изменение пароля пользователя.
 
         Args:
+
             email (str): Адрес электронной почты пользователя.
             password (str): Новый пароль пользователя.
             password_two (str): Повтор нового пароля пользователя.
 
         Returns:
+
             dict: Результат изменения пароля.
             - "message" (str): Сообщение о результате операции.
             - "status_code" (int): Код статуса операции.
 
         Notes:
+
             - Проверяет совпадение нового пароля и его повтора.
             - Обновляет пароль пользователя в базе данных.
         """
@@ -271,14 +295,17 @@ class Logout:
         Удаление токена пользователя из базы данных redis.
 
         Args:
+
             token (str): Токен пользователя для удаления.
 
         Returns:
+
             dict: Результат операции удаления токена.
             - "message" (str): Сообщение о результате операции.
             - "status_code" (int): Код статуса операции.
 
         Notes:
+
             - Проверяет существование токена в базе данных redis.
             - Удаляет токен, если он существует.
     """
