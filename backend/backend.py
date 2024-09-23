@@ -1,6 +1,7 @@
 """Моудль backand проекта."""
 
 import ssl
+import re
 import smtplib
 import random
 from string import Template
@@ -9,17 +10,47 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from database.FDataBase import (
     add_user, select_by_email, select_by_user, update_password)
 from config import (
-    SECRET_KEY, WOKR_EMAIL, WOKR_EMAIL_PASS,
+    WOKR_EMAIL, WOKR_EMAIL_PASS,
     WOKR_PORT, WORK_HOSTNAME)
-from jwt_tools.jwt import create_jwt_token
+from redis_tools.redis_tools import redis_client
+
+
+async def is_valid_email(email) -> bool:
+    """
+    Проверяет, является ли строка допустимым email адресом.
+
+    Args:
+        email (str): Строка для проверки.
+
+    Returns:
+        bool: True, если строка соответствует формату email, иначе False.
+    """
+    email_regex = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+    if re.match(email_regex, email):
+        return True
+    else:
+        return False
 
 
 async def send_email(email: str, message: str, context: str):
     """
     Функция отправляет пользователю сообщение на почту.
 
-    args:
-        context_ssl: представляет собой контекст для SSL
+    Args:
+        email (str): Адрес электронной почты получателя.
+        message (str): Текст сообщения для отправки.
+        context (str): Контекст для подстановки в шаблон сообщения.
+
+    Raises:
+        smtplib.SMTPRecipientsRefused: Если сервер почты отклонил получателей.
+        smtplib.SMTPServerDisconnected: Если сервер почты отключил соединение.
+        smtplib.SMTPException: Для общих ошибок SMTP.
+        Exception: Возможны другие неуказанные ошибки.
+
+    Notes:
+        Функция использует SMTP_SSL для отправки сообщения.
+        Использует предоставленный контекст для SSL.
+        Шаблонизирует сообщение с использованием контекста перед отправкой.
     """
     context_ssl = ssl.create_default_context()
     try:
@@ -46,57 +77,74 @@ class Registration:
     """Работа с регистрацией на маршрутах POST."""
 
     @staticmethod
-    async def register(email: str, login: str, password: str) -> dict:
+    async def register(email: str, login: str,
+                       password: str, password_two: str) -> dict:
         """
         Обработка логики регистрации.
 
-        args:
-            user_log: Получение юзера по логину
-            user_mail: Получение юзера по почте
-            code: Сгенерированный 4х значный код
-            email, login, password: Данные из формы полученые от API
+        Args:
+            email (str): Адрес электронной почты пользователя.
+            login (str): Логин пользователя.
+            password (str): Пароль пользователя.
+            password_two (str): Повторно введенный пароль для подтверждения.
 
-        return:
-            1. Получаем юзера по почте user_mail и логину user_log,
-            2. Проверяем наличие юзера БД.
-            3. Если пользователь присутствует:
-            В состояния сессии, передаётся: email, login, password,
-            code(одноразовый 4х значный код). В блоке try - выполняется
-            получение шаблона, далее на указаную почту,
-            отправляется код(code) и возвращается
-            соответствующий JSONResponse ответ.
+        Returns:
+            dict: Результат регистрации.
+            - "email" (str): Email пользователя.
+            - "login" (str): Логин пользователя.
+            - "password" (str): Пароль пользователя.
+            - "code" (int): Одноразовый четырехзначный код.
+            - "status_code" (int): Код статуса операции.
+
+        Notes:
+            - Проверяет соответствие введенных паролей.
+            - Проверяет наличие пользователя по логину и почте в базе данных.
+            - Генерирует четырехзначный код.
+            - Отправляет код подтверждения на указанный email.
         """
-        user_log = await select_by_user(login)
-        user_mail = await select_by_email(email)
-        if user_log or user_mail:
-            return {"message": "Пользователь с таким логином или почтой, уже существует!",
+        if password != password_two:
+            return {"message": "Введённые пароли не совпадают!",
                     "status_code": 400}
-        code = random.randint(1000, 9999)
-        with open('template_message/t_code.txt',
-                  'r', encoding='utf-8') as file:
-            content = file.read()
-        await send_email(email, content, {'code': code})
-        return {"email": email, "login": login,
-                "password": password, "code": code}
+        else:
+            user_log = await select_by_user(login)
+            user_mail = await select_by_email(email)
+            if user_log or user_mail:
+                return {"message": ("Пользователь с таким логином"
+                                    "или почтой, уже существует!"),
+                        "status_code": 400}
+            code = random.randint(1000, 9999)
+            with open('template_message/t_code.txt',
+                      'r', encoding='utf-8') as file:
+                content = file.read()
+            await send_email(email, content, {'code': code})
+            return {"email": email, "login": login,
+                    "password": password, "code": code, "status_code": 200}
 
     @staticmethod
     async def confirm_register(email: str, login: str,
                                password: str, code: str,
                                verification_code: str) -> dict:
         """
-        Обработка формы ввода 'кода подтверждения регистрации'.
-        password: Пароль из формы.
-        verification_code: Код из сессии, созданый в функции registration
-        code: данные из формы
+        Обработка формы ввода кода подтверждения регистрации.
 
-        return:
-            1. Получаются данные из сессии
-            2. Проверка введённого кода с кодом сохранённым в сессии
-            3. Добавление пользователя в базу данных функцией
-            add_user(пароль с помощью generate_password_hash() передаётся
-            в виде хэша)
-            4. Очистка сессии
-            5. Передача соответствующего JSONResponse ответа
+        Args:
+            email (str): Адрес электронной почты пользователя.
+            login (str): Логин пользователя.
+            password (str): Пароль пользователя.
+            code (str): Код, введенный пользователем для
+            подтверждения регистрации.
+            verification_code (str): Код подтверждения из сессии,
+            созданный при регистрации.
+
+        Returns:
+            dict: Результат подтверждения регистрации.
+            - "message" (str): Сообщение о результате операции.
+            - "status_code" (int): Код статуса операции.
+
+        Notes:
+            - Проверяет соответствие введенного кода с кодом из сессии.
+            - Добавляет пользователя в базу данных с захешированным паролем.
+            - Очищает сессию после успешного подтверждения.
         """
         if str(code) == str(verification_code):
             await add_user(email, login, generate_password_hash(password))
@@ -113,20 +161,23 @@ class Authorization:
         """
         Обработка логики авторизации.
 
-        args:
-            login, password = Данные из формы полученые от API
-            user: Получение пользователя из базы данных по логину или почте
-            code: Одноразовый 4х значный, сгенерированный код
+        Args:
+            login (str): Логин или адрес электронной почты пользователя.
+            password (str): Пароль пользователя.
 
-        return:
-            1. Присваивает переменной user результат получения данных из базы
-            с логином или паролем
-            2. Проводит аутентификацию по логину и паролю.
-            3. Если 2 пункт выполнен, генерирует код, отправляет его на почту
-            4. Метод возвращает dict в зависимости от
-            результата выполнения функций
+        Returns:
+            dict: Результат авторизации.
+            - "login" (str): Логин пользователя.
+            - "code" (int): Одноразовый четырехзначный код для подтверждения.
+            - "status_code" (int): Код статуса операции.
+
+        Notes:
+            - Проверяет тип введенных данных (логин или email).
+            - Проверяет наличие пользователя в базе данных.
+            - Проводит аутентификацию по логину и паролю.
+            - Генерирует и отправляет код подтверждения на указанный email.
         """
-        if "@" in login:
+        if await is_valid_email(login):
             user = await select_by_email(login)
         else:
             user = await select_by_user(login)
@@ -144,97 +195,98 @@ class Authorization:
             except Exception as ex:
                 return {"message": str(ex), "status_code": 400}
 
-    @staticmethod
-    async def confirm_auth(code: str,
-                           verification_code: str, login: str) -> dict:
-        """
-        Метод подтверждения авторизации, по введенному коду.
-
-        args:
-            verification_code: Код полученный из сессии.
-            code: Данные из формы
-
-        return:
-            Метод возвращает результат сравнения verification_code
-            и code, в виде dict
-        """
-        if str(code) == str(verification_code):
-            token = create_jwt_token(login, 12, SECRET_KEY)
-            return {"message": "Авторизация удалась!",
-                    "token": token, "status_code": 200}
-        else:
-            return {"message": "Введенный код неверный!", "status_code": 400}
-
 
 class PasswordRecovery:
     """Работа с восстановлением пароля на маршрутах POST."""
 
     @staticmethod
-    async def recover_pass(user: str):
+    async def recover_pass(user: str) -> dict:
         """
-        Обработка логики восстановление пароля.
+        Обработка логики восстановления пароля.
 
-        args:
-            user: почта пользователя
+        Args:
+            user (str): Адрес электронной почты пользователя.
 
-        return:
-            1. Проверяет, явлеются ли введённые данные почтой
-            2. В переменную result передаются данные пользователя из БД
-            3. Генерируется 4х значный код
-            4. На указаную почту отправляется код с выбранным шаблоном
-            5. Далее метод возвращает dict с кодом, почтой и статус-кодом
+        Returns:
+            dict: Результат восстановления пароля.
+            - "code" (int): Одноразовый четырехзначный код для подтверждения.
+            - "user" (str): Адрес электронной почты пользователя.
+            - "status_code" (int): Код статуса операции.
+
+        Notes:
+            - Проверяет существование пользователя в базе данных.
+            - Генерирует и отправляет код подтверждения на указанный email.
         """
-        if "@" not in user:
-            return {"message": "Укажите почту, а не логин!",
+        if await is_valid_email(user):
+            result = await select_by_email(user)
+        else:
+            result = await select_by_user(user)
+        if not result:
+            return {"message": "Пользователь не существует!",
                     "status_code": 400}
         else:
-            result = await select_by_email(user)
-            if not result:
-                return {"message": "Пользователь не существует!",
-                        "status_code": 400}
-            else:
-                try:
-                    code = random.randint(1000, 9999)
-                    with open('template_message/t_recover.txt',
-                              'r', encoding='utf-8') as file:
-                        content = file.read()
-                    await send_email(user, content, {'code': code})
-                    return {"code": code, "user": user, "status_code": 200}
-                except Exception as ex:
-                    return {"message": str(ex), "status_code": 400}
+            try:
+                code = random.randint(1000, 9999)
+                with open('template_message/t_recover.txt',
+                          'r', encoding='utf-8') as file:
+                    content = file.read()
+                await send_email(result.email, content, {'code': code})
+                return {"code": code, "user": result.name, "status_code": 200}
+            except Exception as ex:
+                return {"message": str(ex), "status_code": 400}
 
     @staticmethod
-    async def confirm_recover(code: str, verification_code: str):
+    async def new_password(email: str, password: str,
+                           password_two: str) -> dict:
         """
-        Подтверждение восстановления, кодом с почты.
+        Изменение пароля пользователя.
 
-        args:
-            code: Код из формы, полученный с API
-            verification_code: Код полученный из сессии
+        Args:
+            email (str): Адрес электронной почты пользователя.
+            password (str): Новый пароль пользователя.
+            password_two (str): Повтор нового пароля пользователя.
 
-        return:
-            1. Проверяет коды на соответствие
-            2. Метод возвращает dict с сообщением и статус-кодом
+        Returns:
+            dict: Результат изменения пароля.
+            - "message" (str): Сообщение о результате операции.
+            - "status_code" (int): Код статуса операции.
+
+        Notes:
+            - Проверяет совпадение нового пароля и его повтора.
+            - Обновляет пароль пользователя в базе данных.
         """
-        if str(code) == str(verification_code):
-            return {"message": "Можете менять пароль!", "status_code": 200}
+        if password != password_two:
+            return {"message": "Пароли не сопадают!",
+                    "status_code": 400}
         else:
-            return {"message": "Введенный код неверный!", "status_code": 400}
+            try:
+                await update_password(email, generate_password_hash(password))
+                return {"message": "Пароль обновлён!", "status_code": 200}
+            except Exception as ex:
+                return {"message": ex, "status_code": 400}
 
+
+class Logout:
+    """
+        Удаление токена пользователя из базы данных redis.
+
+        Args:
+            token (str): Токен пользователя для удаления.
+
+        Returns:
+            dict: Результат операции удаления токена.
+            - "message" (str): Сообщение о результате операции.
+            - "status_code" (int): Код статуса операции.
+
+        Notes:
+            - Проверяет существование токена в базе данных redis.
+            - Удаляет токен, если он существует.
+    """
     @staticmethod
-    async def new_password(email: str, password: str):
-        """
-        Функция восствновления пароля(изменение пароля).
-
-        args:
-            email, password: Данные, получены из формы с API
-
-        return:
-            1. Введённый пароль обновляется
-            2. Метод возвращает dict с сообщением и статус-кодом
-        """
-        try:
-            await update_password(email, generate_password_hash(password))
-            return {"message": "Пароль обновлён!", "status_code": 200}
-        except Exception as ex:
-            return {"message": ex, "status_code": 400}
+    async def delete_token(token: str):
+        """Метод удаляет токен из базы данных redis."""
+        if await redis_client.exists(token):
+            await redis_client.delete(f"token:{token}")
+            return {"message": "Выход выполнен!", "status_code": 308}
+        else:
+            return {"message": "Токен не валиден!", "status_code": 400}

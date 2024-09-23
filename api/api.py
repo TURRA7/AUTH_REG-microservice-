@@ -1,11 +1,28 @@
-from typing import Annotated
-
-from fastapi import APIRouter, Form, Request
+import json
+import redis
+import sentry_sdk
+from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
+from pydantic import ValidationError
 
-from backend.backend import Authorization, PasswordRecovery, Registration
-from config import SESSION_STATE_CODE, SESSION_STATE_MAIL
-from link_backend_frontend.link_BF import TemplateHandler
+from sentry_sdk.integrations.fastapi import FastApiIntegration
+
+from backend.backend import (Authorization, Logout,
+                             PasswordRecovery, Registration)
+from config import (SECRET_KEY, SENTRY_DNS, SESSION_STATE_CODE,
+                    SESSION_STATE_MAIL)
+from jwt_tools.jwt import create_jwt_token
+from models.models import (CodeConfirm, PasswordChange,
+                           Recover, Token, UserAuth, UserReg)
+
+
+sentry_sdk.init(
+    dsn=SENTRY_DNS,
+    integrations=[
+        FastApiIntegration(),
+    ],
+    traces_sample_rate=1.0,
+)
 
 
 # Роутеры, для формы регистрации
@@ -16,174 +33,228 @@ app_auth = APIRouter(prefix="/authorization")
 app_logout = APIRouter(prefix="/logout")
 
 
-# Маршруты класса TemplateHandler(позже не вносить в репозиторий с API):
-registration_handler = TemplateHandler(
-    router=app_reg, route="/", template_path="reg/reg.html")
-confirm_handler = TemplateHandler(
-    router=app_reg, route="/confirm", template_path="confirm/confirm.html")
-authorization_handler = TemplateHandler(
-    router=app_auth, route="/", template_path="auth/auth.html")
-verification_handler = TemplateHandler(
-    router=app_auth, route="/verification",
-    template_path="verification/verification.html")
-recover_handler = TemplateHandler(
-    router=app_auth, route="/recover", template_path="recover/recover.html")
-reset_code_handler = TemplateHandler(
-    router=app_auth, route="/recover/reset_code",
-    template_path="reset_code/reset_code.html")
-change_password_handler = TemplateHandler(
-    router=app_auth, route="/recover/reset_code/change_password",
-    template_path="change_password/change_password.html")
+# ПОдключение Redis
+redis_client = redis.Redis(host='localhost', port=6379, db=0)
 
 
 @app_reg.post("/")
-async def registration(request: Request,
-                       email: Annotated[str, Form()],
-                       login: Annotated[str, Form()],
-                       password: Annotated[str, Form()],
-                       password_two: Annotated[str, Form()]
-                       ) -> JSONResponse:
+async def registration(data: UserReg) -> JSONResponse:
     """
-    Обработка регистрации.
+    Регистрация пользователя.
 
-    args:
-        result: Обработка пользователя: добавление в БД,
-        отправка кода на почту
+    Args:
 
-    return:
-        Возвращает готовый JSONResponse ответ с
-        состоянием добавления пользователя
+        email: Почта.
+        login: Логин.
+        password: Пароль.
+        password_two: Повтор пароля.
+
+    Returns:
+
+        JSONResponse: Результат регистрации.
+
+        - 200: Успешное подтверждение, возвращает сообщение об успехе.
+        - 422: Ошибка валидации, возвращает сообщение об ошибке.
+        - Другие коды: Соответствующие сообщения об ошибках и коды статусов.
+
+    Notes:
+
+        1. Валидирует данные пользователя.
+        2. Сохраняет временные данные в Redis
+        3. Отправляет сгенерированный проверочный код на почту.
     """
-    result = await Registration.register(email, login, password)
-    request.session['email'] = email
-    request.session['login'] = login
-    request.session['password'] = password
-    request.session['code'] = result['code']
-    return JSONResponse(content={"key": result["email"]}, status_code=200)
-
-
-@app_reg.post("/confirm")
-async def confirm(request: Request,
-                  code: Annotated[str, Form()]) -> JSONResponse:
-    """
-    Обработка формы ввода 'кода подтверждения регистрации'.
-
-    args:
-        email, login, password, verification_code: Данные из сессии
-        добавленные в на шаге регистрации
-        result: Обработка ввода и подтверждение кода
-
-    return:
-        Возвращает готовый JSONResponse ответ с
-        состоянием добавления пользователя
-    """
-    email = request.session.get('email')
-    login = request.session.get('login')
-    password = request.session.get('password')
-    verification_code = request.session.get('code')
-    result = await Registration.confirm_register(
-        email, login, password, code, verification_code)
+    result = await Registration.register(data.email,
+                                         data.login,
+                                         data.password,
+                                         data.password_two)
     if result['status_code'] == 200:
-        request.session.clear()
-        response = JSONResponse(content={"message": result["message"]},
+        data_redis = {
+            "email": data.email,
+            "login": data.login,
+            "password": data.password,
+            "code": result['code']
+        }
+        redis_client.set(data.login, json.dumps(data_redis))
+        response = JSONResponse(content={"message": "Введите код с почты!"},
                                 status_code=200)
     else:
+        sentry_sdk.capture_message(result["message"])
         response = JSONResponse(content={"message": result["message"]},
-                                status_code=400)
+                                status_code=result["status_code"])
     return response
 
 
+@app_reg.post("/confirm")
+async def confirm(data: CodeConfirm) -> JSONResponse:
+    """
+    Обработка формы ввода кода подтверждения регистрации.
+
+    Args:
+
+        code: Код из из почты.
+        login: "Логин" пользователя при регистрации.
+
+    Returns:
+
+        JSONResponse: Результат подтверждения кода.
+
+        - 200: Успешное подтверждение, возвращает сообщение об успехе.
+        - 422: Ошибка валидации, возвращает сообщение об ошибке.
+        - 400: Ошибка подтверждения, возвращает соответствующее сообщение.
+
+    Notes:
+
+        1. Валидирует данные.
+        2. По логину/почте введённой в предыдущем шаге /registration,
+        достаёт данные из Redis.
+        3. Сверяет введённый код с кодом из хранилища Redis.
+        4. Если введённый код верный, сохраняет пользователя в базу данных.
+        * Пароль сохраняется в виде хэша.
+        5. Очищает Redis от временных данных.
+    """
+    try:
+        user_data = redis_client.get(data.login)
+        user_data = json.loads(user_data.decode('utf-8'))
+        if isinstance(user_data, JSONResponse):
+            return user_data
+        email = user_data.get('email')
+        login = user_data.get('login')
+        password = user_data.get('password')
+        verification_code = user_data.get('code')
+    except Exception as e:
+        return JSONResponse(content={"message": str(e)}, status_code=400)
+
+    result = await Registration.confirm_register(
+        email, login, password, data.code, verification_code)
+    if result['status_code'] == 200:
+        redis_client.delete(f"login:{login}")
+        return JSONResponse(content={"message": result["message"]},
+                            status_code=200)
+    else:
+        return JSONResponse(content={"message": result["message"]},
+                            status_code=400)
+
+
 @app_auth.post("/")
-async def authorization(request: Request,
-                        login: Annotated[str, Form()],
-                        password: Annotated[str, Form()],
-                        remember_me: bool = Form(False)
-                        ) -> JSONResponse:
+async def authorization(data: UserAuth) -> JSONResponse:
     """
     Обработчик логики авторизации.
 
-    args:
-        user: Пользователь из базы данных
-        code: Сгенерированный 4х значный код
-        response: JSONResponse ответ
-        login, password: данные из формы
-        remember_me: положение флажка 'запомнить меня' в форме
-
-    return:
-        Возвращает готовый JSONResponse ответ удачным или неудачным
-        статусом авторизации, а так же сохраняет код отправленный на почту
-        в сессию и задаёт куки для флага "запомнить меня"
+    Args:
+        login: Логин пользователя,
+        password: Пароль пользователя,
+        memorize_user: Булево значение(запомнить пользователя).
+    Returns:
+        JSONResponse: Результат авторизации.
+        - 200: Успешная авторизация, возвращает ключ 'key' (login).
+        - Другие коды: Соответствующие сообщения об ошибках и коды статусов.
+    Notes:
+        - Сохраняет код, отправленный на почту, и логин в сессию.
+        - Если установлен флажок 'запомнить меня',
+        устанавливает соответствующую куку.
     """
-    result = await Authorization.authorization(login, password)
+    result = await Authorization.authorization(data.login,
+                                               data.password)
     if result['status_code'] == 200:
-        request.session['code'] = result['code']
-        request.session['login'] = login
+        data_redis = {
+            "code": result['code'],
+            "login": data.login,
+            "remember_user": data.memorize_user
+        }
+        redis_client.set(data.login, json.dumps(data_redis))
         response = JSONResponse(content={"key": result["login"]},
                                 status_code=200)
     else:
         response = JSONResponse(content={"message": result["message"]},
                                 status_code=result['status_code'])
-    if remember_me:
-        result.set_cookie(key="remember_me", value="true", max_age=30*24*60*60)
     return response
 
 
 @app_auth.post("/verification")
-async def verification(request: Request,
-                       code: Annotated[str, Form()]) -> JSONResponse:
+async def verification(data: CodeConfirm) -> JSONResponse:
     """
-    Обработка формы ввода 'кода подтверждения авторизации'.
+    Обработка формы ввода кода подтверждения авторизации.
 
-    args:
-        code: Данные из формы
-        result: Обработка ввода и подтверждение кода
-
-    return:
-        Возвращает готовый JSONResponse ответ с
-        состоянием авторизации
+    Args:
+        data: Код из почты и юзер(логин/почта. в зависимости от того,
+        что было передано в предыдущем шаге /authorization).
+    Returns:
+        JSONResponse: Результат подтверждения кода.
+        - 200: Успешное подтверждение, возвращает сообщение и токен,
+        очищает сессию.
+        - 422: Ошибка валидации, возвращает сообщение об ошибке.
+        - Другие коды: Соответствующие сообщения об ошибках и коды статусов.
+    Notes:
+        - Получает код и логин из сессии, передаёт на бэкенд, при успешном
+        ответе с бэкенда, очищает сессию.
     """
-    verification_code = request.session.get('code')
-    login = request.session.get('login')
-    result = await Authorization.confirm_auth(code, verification_code, login)
-    if result['status_code'] == 200:
-        request.session.clear()
+    try:
+        data = CodeConfirm()
+    except ValidationError as e:
+        errors = [{'message': err['msg'].split('Value error, ')[-1]}
+                  for err in e.errors()]
+        return JSONResponse(content={"message": errors}, status_code=422)
+    try:
+        user_data = redis_client.get(data.login)
+        user_data = json.loads(user_data.decode('utf-8'))
+        if isinstance(user_data, JSONResponse):
+            return user_data
+        login = user_data.get('login')
+        auth_code = user_data.get('code')
+    except Exception as e:
+        return JSONResponse(content={"message": str(e)}, status_code=400)
 
-        # Здесь может быть перенаправление на нужный вам микросервис
-        # <--- код --->
-        # Для декодирования токена в другом микросервисе,
-        # а так же для защиты маршрутов, следует применять модуль jwt_tools
-
-        response = JSONResponse(content={"message": result["message"],
-                                         "token": result["token"]},
-                                status_code=result['status_code'])
+    if str(auth_code) == str(data.code):
+        # Вот тут надо докрутить авторизацию!!!
+        token = create_jwt_token(login=login,
+                                 token_lifetime_hours=1,
+                                 secret_key=SECRET_KEY)
+        headers = {"Authorization": f"Bearer {token}"}
+        response = JSONResponse(content={"message": "Вы авторизированны!"},
+                                headers=headers,
+                                status_code=200)
+        redis_client.delete(f"login:{login}")
     else:
-        response = JSONResponse(content={"message": result["message"]},
-                                status_code=result['status_code'])
+        response = JSONResponse(content={"message": "Введенный код неверный"},
+                                status_code=401)
     return response
 
 
 @app_auth.post("/recover")
-async def recover(request: Request,
-                  user: Annotated[str, Form()]) -> JSONResponse:
+async def recover(data: Recover) -> JSONResponse:
     """
-    Обработчик логики восстановления(изменения) пароля.
+    Обработчик логики восстановления (изменения) пароля.
 
-    args:
-        user: Данные из формы (введённая почта)
-        response: JSONResponse ответ
+    Args:
 
-    return:
-        По результатам обновления пароля, возвращает
-        соответствующий JSONResponse ответ, так же сессии
-        задаётся индификатор SESSION_STATE_MAIL
+        user: Логин или почта введённая пользователем.
+
+    Returns:
+
+        JSONResponse: Результат восстановления пароля.
+
+        - 200: Успешное подтверждение, возвращает сообщение об успехе.
+        - 422: Ошибка валидации, возвращает сообщение об ошибке.
+        - Другие коды: Соответствующие сообщения об ошибках и коды статусов.
+
+    Notes:
+
+        1. Валидирует данные
+        2. По введённыи данным находит пользователя и отправляет на почту
+        сгенерированный код.
+        3. Сохраняет в Redis временные данные (состояние, код и юзера).
     """
-    result = await PasswordRecovery.recover_pass(user)
+    result = await PasswordRecovery.recover_pass(data.user)
+    data_redis = {
+        'state': SESSION_STATE_MAIL,
+        'code': result['code'],
+        'user': data.user
+        }
     if result['status_code'] == 200:
-        request.session['state'] = SESSION_STATE_MAIL
-        request.session['code'] = result['code']
-        request.session['email'] = result['user']
-        response = JSONResponse(content={"user": result["user"]},
-                                status_code=result['status_code'])
+        redis_client.set(data.user, json.dumps(data_redis))
+        response = JSONResponse(
+            content={"message": "Теперь введите код с почты..."},
+            status_code=200)
     else:
         response = JSONResponse(content={"message": result["message"]},
                                 status_code=result['status_code'])
@@ -191,39 +262,61 @@ async def recover(request: Request,
 
 
 @app_auth.post("/recover/reset_code")
-async def reset_code(request: Request,
-                     code: Annotated[str, Form()]) -> JSONResponse:
+async def reset_code(data: CodeConfirm) -> JSONResponse:
     """
-    Подтверждение восстановления, кодом с почты.
+    Подтверждение восстановления пароля кодом с почты.
 
-    Сессия очищается после 6х минут, если код вводится не верный.
+    Args:
 
-    args:
-        code: Данные из формы
-        verification_code: Код полученный из сессии
-        response: JSONResponse ответ
+        code: Код из из почты.
+        login: Логин/почта введённая в предыдущем шаге /recover.
 
-    return:
-        1. Проверяет состояние сессии
-        2. Получает код(verification_code) из сессии и
-        сверяем его с кодом(code) введённым пользователем в сессии
-        3. Коды сверяются в функции confirm_recover(), если
-        проверка пройдена, старый индификатор сессии удаляется,
-        на его место ставится новый SESSION_STATE_CODE
-        4. Функция возвращает соответствующий JSONResponse ответ
+    Returns:
+
+        JSONResponse: Результат подтверждения кода.
+
+        - 200: Успешное подтверждение, возвращает сообщение об успехе.
+        - 422: Ошибка валидации, возвращает сообщение об ошибке.
+        - 400: Ошибка состояния сессии, почта не указана.
+    Notes:
+
+        1. Валидирует данные
+        2. По логину/почте введённой в предыдущем шаге /recover,
+        достаёт данные из Redis.
+        3. Сверяет идентификатор сессии, с идентификатором из Redis.
+        4. Сверяет код из почты, с кодом из хранилища Redis.
+        5. Сохраняет идентификатор сессии и пользователя, во временное
+        хранилище Redis, по логину/почте введённым в шаге /recover.
+        6. Очищает старые временные данные в Redis.
+
+        * Сессия очищается через 6 минут, если код неверный. Время изменяется
+        в переменных окружения.
     """
-    if request.session.get('state') == SESSION_STATE_MAIL:
-        verification_code = request.session.get('code')
-        result = await PasswordRecovery.confirm_recover(
-            code, verification_code)
-        if result['status_code'] == 200:
-            del request.session['state']
-            request.session['state'] = SESSION_STATE_CODE
-            response = JSONResponse(content={"message": result["message"]},
-                                    status_code=result['status_code'])
+    try:
+        user_data = redis_client.get(data.login)
+        user_data = json.loads(user_data.decode('utf-8'))
+        if isinstance(user_data, JSONResponse):
+            return user_data
+        state = user_data.get('state')
+        verification_code = user_data.get('code')
+        user = user_data.get('user')
+    except Exception as e:
+        return JSONResponse(content={"message": str(e)}, status_code=400)
+
+    if state == SESSION_STATE_MAIL:
+        if str(verification_code) == str(data.code):
+            data_redis = {
+                "state": SESSION_STATE_CODE,
+                'user': user
+                }
+            redis_client.set(user, json.dumps(data_redis))
+            response = JSONResponse(
+                content={"message": "Можете менять пароль!"}, status_code=200)
+            redis_client.delete(f"login:{user}")
         else:
-            response = JSONResponse(content={"message": result["message"]},
-                                    status_code=result['status_code'])
+            response = JSONResponse(
+                content={"message": "Введенный код неверный!"},
+                status_code=400)
         return response
     else:
         return JSONResponse(content={"message": "Вы не указали почту!"},
@@ -231,35 +324,52 @@ async def reset_code(request: Request,
 
 
 @app_auth.post("/recover/reset_code/change_password")
-async def change_password(request: Request,
-                          password: Annotated[str, Form()],
-                          password_two: Annotated[str, Form()]
-                          ) -> JSONResponse:
+async def change_password(data: PasswordChange) -> JSONResponse:
     """
-    Функция восствновления пароля(изменение пароля).
+    Изменение пароля после восстановления.
 
-    Сессия очищается после 6х минут, если код вводится не верный.
+    Args:
 
-    args:
-        verification_code: Код полученный из сессии.
-        password: Данные из формы(пароль)
-        password_two: Данные из формы(повтор пароля)
-        email: Почта пользователя из сессии
-        result: Резуклтат изменения(dict) пароля в базе данных
-        response: JSONResponse ответ
+        "user": Логин/почта введённая в первом шаге /recovery
+        "password": Новый пароль.
+        "password_two": Подтверждение нового пароля.
 
-    return:
-        1. Проверяем состояние сессии
-        2. Получаем из сессии почту и изменяем пароль в update_password
-        3. Метод возвращает JSONResponse ответ
+    Returns:
+
+        JSONResponse: Результат изменения пароля.
+        - 200: Успешное подтверждение, возвращает сообщение об успехе.
+        - 422: Ошибка валидации, возвращает сообщение об ошибке.
+        - 400: Ошибка состояния сессии, код не введен.
+
+    Notes:
+
+        1. Валидирует данные
+        2. По логину/почте введённой в предыдущем шаге /recover,
+        достаёт данные из Redis.
+        3. Сверяет идентификатор сессии, с идентификатором из Redis.
+        4. Меняет пароль в базе данных(сохраняя его в виде хэша).
+        5. Удаляет временные данные из Redis.
+
+        * Сессия очищается через 6 минут, если код неверный. Время изменяется
+        в переменных окружения.
     """
-    if request.session.get('state') == SESSION_STATE_CODE:
-        email = request.session.get('email')
-        result = await PasswordRecovery.new_password(email, password)
+    try:
+        user_data = redis_client.get(data.user)
+        user_data = json.loads(user_data.decode('utf-8'))
+        if isinstance(user_data, JSONResponse):
+            return user_data
+        state = user_data.get('state')
+        user = user_data.get('user')
+    except Exception as e:
+        return JSONResponse(content={"message": str(e)}, status_code=400)
+
+    if state == SESSION_STATE_CODE:
+        result = await PasswordRecovery.new_password(user, data.password,
+                                                     data.password_two)
         if result['status_code'] == 200:
-            request.session.clear()
             response = JSONResponse(content={"message": result["message"]},
                                     status_code=result['status_code'])
+            redis_client.delete(f"login:{user}")
         else:
             response = JSONResponse(content={"message": result["message"]},
                                     status_code=result['status_code'])
@@ -270,6 +380,27 @@ async def change_password(request: Request,
 
 
 @app_logout.post("/")
-async def logout(request: Request) -> JSONResponse:
-    """Обработчик выхода пользователя"""
-    pass
+async def logout(request: Request, data: Token) -> JSONResponse:
+    """
+    Обработчик выхода пользователя.
+
+    Args:
+        request (Request): HTTP запрос.
+        data (Token): Токен пользователя для выхода.
+
+    Returns:
+        JSONResponse: Результат выхода пользователя.
+        - 308: Успешный выход, возможно с перенаправлением.
+        - Другие коды: Соответствующие сообщения об ошибках и коды статусов.
+    """
+    result = await Logout.delete_token(data.token)
+    if result['status_code'] == 308:
+        # Здесь вы можете указать перенаправление на нужную
+        # страницу в другом микросервисе после выхода пользователя
+        # <--- код --->
+        response = JSONResponse(content={"message": result["message"]},
+                                status_code=result['status_code'])
+    else:
+        response = JSONResponse(content={"message": result["message"]},
+                                status_code=result['status_code'])
+    return response

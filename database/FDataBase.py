@@ -35,7 +35,7 @@ class User(Base):
     role_id: Mapped[int] = mapped_column(default=1)
 
     def __repr__(self) -> str:
-        return f"User(id={self.id!r}, name={self.name!r}, password={self.password!r})"
+        return f"User(id={self.id!r}, name={self.name!r})"
 
 
 async def create_tables() -> None:
@@ -54,7 +54,7 @@ async def select_by_user(login) -> List[User]:
     """Получение данных из таблцы по логину."""
     async with AsyncSession(engine) as session:
         result = await session.execute(select(User).where(User.name == login))
-        users = result.scalars().all()
+        users = result.scalars().first()
         return users
 
 
@@ -62,7 +62,7 @@ async def select_by_email(email) -> List[User]:
     """Получение данных из таблцы по почте."""
     async with AsyncSession(engine) as session:
         result = await session.execute(select(User).where(User.email == email))
-        users = result.scalars().all()
+        users = result.scalars().first()
         return users
 
 
@@ -86,5 +86,4 @@ async def update_password(email, password) -> None:
                 result.password = password
                 await session.commit()
             else:
-                # Заменить на логги в будущем
-                print(f"User with login {email} not found.")
+                return {"message": f"User with login {email} not found."}
