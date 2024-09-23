@@ -53,7 +53,6 @@ class UserReg(BaseModel):
 class CodeConfirm(BaseModel):
     """Валидация кода подтверждения."""
     code: str
-    login: str
 
     class Config:
         str_strip_whitespace = True

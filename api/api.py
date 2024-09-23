@@ -72,9 +72,8 @@ async def registration(data: UserReg) -> JSONResponse:
             "email": data.email,
             "login": data.login,
             "password": data.password,
-            "code": result['code']
         }
-        redis_client.set(data.login, json.dumps(data_redis))
+        redis_client.set(result['code'], json.dumps(data_redis))
         response = JSONResponse(content={"message": "Введите код с почты!"},
                                 status_code=200)
     else:
@@ -92,7 +91,6 @@ async def confirm(data: CodeConfirm) -> JSONResponse:
     Args:
 
         code: Код из из почты.
-        login: "Логин" пользователя при регистрации.
 
     Returns:
 
@@ -105,29 +103,28 @@ async def confirm(data: CodeConfirm) -> JSONResponse:
     Notes:
 
         1. Валидирует данные.
-        2. По логину/почте введённой в предыдущем шаге /registration,
-        достаёт данные из Redis.
-        3. Сверяет введённый код с кодом из хранилища Redis.
-        4. Если введённый код верный, сохраняет пользователя в базу данных.
+        2. По коду с почты достаёт данные из Redis.
+        3. сохраняет пользователя в базу данных.
         * Пароль сохраняется в виде хэша.
-        5. Очищает Redis от временных данных.
+        4. Очищает Redis от временных данных.
     """
-    try:
-        user_data = redis_client.get(data.login)
-        user_data = json.loads(user_data.decode('utf-8'))
-        if isinstance(user_data, JSONResponse):
-            return user_data
-        email = user_data.get('email')
-        login = user_data.get('login')
-        password = user_data.get('password')
-        verification_code = user_data.get('code')
-    except Exception as e:
-        return JSONResponse(content={"message": str(e)}, status_code=400)
+    if not redis_client.exists(data.code):
+        return JSONResponse(
+            content={"message": "Введённый код не верный!"},
+            status_code=400)
+    user_data = redis_client.get(data.code)
+    user_data = json.loads(user_data.decode('utf-8'))
+    if isinstance(user_data, JSONResponse):
+        return user_data
+    email = user_data.get('email')
+    login = user_data.get('login')
+    password = user_data.get('password')
 
     result = await Registration.confirm_register(
-        email, login, password, data.code, verification_code)
+        email, login, password)
+
     if result['status_code'] == 200:
-        redis_client.delete(f"login:{login}")
+        redis_client.delete(f"login:{data.code}")
         return JSONResponse(content={"message": result["message"]},
                             status_code=200)
     else:
@@ -140,6 +137,7 @@ async def authorization(data: UserAuth) -> JSONResponse:
     """
     Обработчик логики авторизации.
 
+    !!! поменять доку после исправления функции!!!
     Args:
         login: Логин пользователя,
         password: Пароль пользователя,
@@ -161,7 +159,7 @@ async def authorization(data: UserAuth) -> JSONResponse:
             "login": data.login,
             "remember_user": data.memorize_user
         }
-        redis_client.set(data.login, json.dumps(data_redis))
+        redis_client.set(result['code'], json.dumps(data_redis))
         response = JSONResponse(content={"key": result["login"]},
                                 status_code=200)
     else:
@@ -175,6 +173,7 @@ async def verification(data: CodeConfirm) -> JSONResponse:
     """
     Обработка формы ввода кода подтверждения авторизации.
 
+    !!! поменять доку после исправления функции!!!
     Args:
         data: Код из почты и юзер(логин/почта. в зависимости от того,
         что было передано в предыдущем шаге /authorization).
@@ -188,35 +187,27 @@ async def verification(data: CodeConfirm) -> JSONResponse:
         - Получает код и логин из сессии, передаёт на бэкенд, при успешном
         ответе с бэкенда, очищает сессию.
     """
-    try:
-        data = CodeConfirm()
-    except ValidationError as e:
-        errors = [{'message': err['msg'].split('Value error, ')[-1]}
-                  for err in e.errors()]
-        return JSONResponse(content={"message": errors}, status_code=422)
-    try:
-        user_data = redis_client.get(data.login)
-        user_data = json.loads(user_data.decode('utf-8'))
-        if isinstance(user_data, JSONResponse):
-            return user_data
-        login = user_data.get('login')
-        auth_code = user_data.get('code')
-    except Exception as e:
-        return JSONResponse(content={"message": str(e)}, status_code=400)
 
-    if str(auth_code) == str(data.code):
-        # Вот тут надо докрутить авторизацию!!!
-        token = create_jwt_token(login=login,
-                                 token_lifetime_hours=1,
-                                 secret_key=SECRET_KEY)
-        headers = {"Authorization": f"Bearer {token}"}
-        response = JSONResponse(content={"message": "Вы авторизированны!"},
-                                headers=headers,
-                                status_code=200)
-        redis_client.delete(f"login:{login}")
-    else:
-        response = JSONResponse(content={"message": "Введенный код неверный"},
-                                status_code=401)
+    if not redis_client.exists(data.code):
+        response = JSONResponse(
+            content={"message": "Введённый код не верный!"},
+            status_code=400)
+    user_data = redis_client.get(data.code)
+    user_data = json.loads(user_data.decode('utf-8'))
+    if isinstance(user_data, JSONResponse):
+        return user_data
+    login = user_data.get('login')
+    auth_code = user_data.get('code')
+
+    # Вот тут надо докрутить авторизацию!!!
+    token = create_jwt_token(login=login,
+                             token_lifetime_hours=1,
+                             secret_key=SECRET_KEY)
+    headers = {"Authorization": f"Bearer {token}"}
+    response = JSONResponse(content={"message": "Вы авторизированны!"},
+                            headers=headers,
+                            status_code=200)
+    redis_client.delete(f"login:{auth_code}")
     return response
 
 

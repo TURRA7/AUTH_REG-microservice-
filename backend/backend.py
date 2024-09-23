@@ -83,12 +83,14 @@ class Registration:
         Обработка логики регистрации.
 
         Args:
+
             email (str): Адрес электронной почты пользователя.
             login (str): Логин пользователя.
             password (str): Пароль пользователя.
             password_two (str): Повторно введенный пароль для подтверждения.
 
         Returns:
+
             dict: Результат регистрации.
             - "email" (str): Email пользователя.
             - "login" (str): Логин пользователя.
@@ -97,6 +99,7 @@ class Registration:
             - "status_code" (int): Код статуса операции.
 
         Notes:
+
             - Проверяет соответствие введенных паролей.
             - Проверяет наличие пользователя по логину и почте в базе данных.
             - Генерирует четырехзначный код.
@@ -122,35 +125,32 @@ class Registration:
 
     @staticmethod
     async def confirm_register(email: str, login: str,
-                               password: str, code: str,
-                               verification_code: str) -> dict:
+                               password: str) -> dict:
         """
         Обработка формы ввода кода подтверждения регистрации.
 
         Args:
+
             email (str): Адрес электронной почты пользователя.
             login (str): Логин пользователя.
             password (str): Пароль пользователя.
-            code (str): Код, введенный пользователем для
-            подтверждения регистрации.
-            verification_code (str): Код подтверждения из сессии,
-            созданный при регистрации.
 
         Returns:
+
             dict: Результат подтверждения регистрации.
             - "message" (str): Сообщение о результате операции.
             - "status_code" (int): Код статуса операции.
 
         Notes:
-            - Проверяет соответствие введенного кода с кодом из сессии.
+
             - Добавляет пользователя в базу данных с захешированным паролем.
-            - Очищает сессию после успешного подтверждения.
         """
-        if str(code) == str(verification_code):
+        try:
             await add_user(email, login, generate_password_hash(password))
             return {"message": "Введенный код верный!", "status_code": 200}
-        else:
-            return {"message": "Введенный код неверный!", "status_code": 400}
+        except Exception as ex:
+            return {"message": "Ошибка регистрации", "status_code": 400,
+                    "error": str(ex)}
 
 
 class Authorization:
