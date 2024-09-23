@@ -54,16 +54,16 @@ async def select_by_user(login) -> List[User]:
     """Получение данных из таблцы по логину."""
     async with AsyncSession(engine) as session:
         result = await session.execute(select(User).where(User.name == login))
-        users = result.scalars().first()
-        return users
+        user = result.scalars().first()
+        return user
 
 
 async def select_by_email(email) -> List[User]:
     """Получение данных из таблцы по почте."""
     async with AsyncSession(engine) as session:
         result = await session.execute(select(User).where(User.email == email))
-        users = result.scalars().first()
-        return users
+        user = result.scalars().first()
+        return user
 
 
 async def add_user(email, login, password) -> None:

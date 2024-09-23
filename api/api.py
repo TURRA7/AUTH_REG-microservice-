@@ -1,19 +1,49 @@
+from datetime import timedelta
 import json
+import jwt
 import redis
-import sentry_sdk
-from fastapi import APIRouter, Request
-from fastapi.responses import JSONResponse
-from pydantic import ValidationError
 
+from fastapi import APIRouter
+from fastapi.responses import JSONResponse
+from fastapi import Depends, HTTPException, status
+from fastapi.security import OAuth2PasswordBearer
+
+import sentry_sdk
 from sentry_sdk.integrations.fastapi import FastApiIntegration
 
-from backend.backend import (Authorization, Logout,
-                             PasswordRecovery, Registration)
+from backend.backend import (Authorization, PasswordRecovery,
+                             Registration)
 from config import (SECRET_KEY, SENTRY_DNS, SESSION_STATE_CODE,
                     SESSION_STATE_MAIL)
-from jwt_tools.jwt import create_jwt_token
+from jwt_tools.jwt import create_jwt_token, decode_jwt_token
 from models.models import (CodeConfirm, PasswordChange,
-                           Recover, Token, UserAuth, UserReg)
+                           Recover, UserAuth, UserReg)
+
+
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
+
+
+async def get_current_user(token: str = Depends(oauth2_scheme)):
+    """
+    Проверка токена в Redis.
+    """
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Could not validate credentials",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+
+    if not redis_client.exists(token):
+        raise credentials_exception
+
+    try:
+        payload = decode_jwt_token(token, SECRET_KEY)
+        login = payload.get("login")
+        if login is None:
+            raise credentials_exception
+    except jwt.JWTError:
+        raise credentials_exception
+    return {"login": login}
 
 
 sentry_sdk.init(
@@ -132,24 +162,28 @@ async def confirm(data: CodeConfirm) -> JSONResponse:
                             status_code=400)
 
 
+# Изменить документацию!!! # Изменить документацию!!! # Изменить документацию!!!
 @app_auth.post("/")
 async def authorization(data: UserAuth) -> JSONResponse:
     """
     Обработчик логики авторизации.
 
-    !!! поменять доку после исправления функции!!!
     Args:
+
         login: Логин пользователя,
         password: Пароль пользователя,
         memorize_user: Булево значение(запомнить пользователя).
+
     Returns:
+
         JSONResponse: Результат авторизации.
         - 200: Успешная авторизация, возвращает ключ 'key' (login).
         - Другие коды: Соответствующие сообщения об ошибках и коды статусов.
+
     Notes:
-        - Сохраняет код, отправленный на почту, и логин в сессию.
-        - Если установлен флажок 'запомнить меня',
-        устанавливает соответствующую куку.
+        1. Сохраняет временные данные (код, логин/почта и
+        индикатор'запоминания клиента')
+
     """
     result = await Authorization.authorization(data.login,
                                                data.password)
@@ -168,6 +202,7 @@ async def authorization(data: UserAuth) -> JSONResponse:
     return response
 
 
+# Изменить документацию!!! # Изменить документацию!!! # Изменить документацию!!!
 @app_auth.post("/verification")
 async def verification(data: CodeConfirm) -> JSONResponse:
     """
@@ -198,11 +233,10 @@ async def verification(data: CodeConfirm) -> JSONResponse:
         return user_data
     login = user_data.get('login')
     auth_code = user_data.get('code')
-
-    # Вот тут надо докрутить авторизацию!!!
     token = create_jwt_token(login=login,
                              token_lifetime_hours=1,
                              secret_key=SECRET_KEY)
+    redis_client.setex(token, timedelta(hours=12), login)
     headers = {"Authorization": f"Bearer {token}"}
     response = JSONResponse(content={"message": "Вы авторизированны!"},
                             headers=headers,
@@ -361,8 +395,9 @@ async def change_password(data: PasswordChange) -> JSONResponse:
                             status_code=400)
 
 
+# Изменить документацию!!! # Изменить документацию!!! # Изменить документацию!!! 
 @app_logout.post("/")
-async def logout(request: Request, data: Token) -> JSONResponse:
+async def logout(token: str = Depends(oauth2_scheme)) -> JSONResponse:
     """
     Обработчик выхода пользователя.
 
@@ -375,14 +410,10 @@ async def logout(request: Request, data: Token) -> JSONResponse:
         - 308: Успешный выход, возможно с перенаправлением.
         - Другие коды: Соответствующие сообщения об ошибках и коды статусов.
     """
-    result = await Logout.delete_token(data.token)
-    if result['status_code'] == 308:
-        # Здесь вы можете указать перенаправление на нужную
-        # страницу в другом микросервисе после выхода пользователя
-        # <--- код --->
-        response = JSONResponse(content={"message": result["message"]},
-                                status_code=result['status_code'])
+    if redis_client.exists(token):
+        redis_client.delete(token)
+        return JSONResponse(content={"message": "Успешный выход"},
+                            status_code=200)
     else:
-        response = JSONResponse(content={"message": result["message"]},
-                                status_code=result['status_code'])
-    return response
+        return JSONResponse(content={"message": "Токен не найден"},
+                            status_code=400)

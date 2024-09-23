@@ -13,7 +13,6 @@ from database.FDataBase import (
 from config import (
     WOKR_EMAIL, WOKR_EMAIL_PASS,
     WOKR_PORT, WORK_HOSTNAME, GENERATION_STRING_LENGTH)
-from redis_tools.redis_tools import redis_client
 
 
 async def generate_random_string(length):
@@ -24,7 +23,7 @@ async def generate_random_string(length):
 
         length: кол-во символов в строке.
     """
-    characters = string.ascii_letters + string.digits + string.punctuation
+    characters = string.ascii_letters + string.digits
     return ''.join(random.choice(characters) for _ in range(length))
 
 
@@ -133,7 +132,7 @@ class Registration:
                 return {"message": ("Пользователь с таким логином"
                                     "или почтой, уже существует!"),
                         "status_code": 400}
-            code = await generate_random_string(GENERATION_STRING_LENGTH)
+            code = await generate_random_string(int(GENERATION_STRING_LENGTH))
             with open('template_message/t_code.txt',
                       'r', encoding='utf-8') as file:
                 content = file.read()
@@ -199,16 +198,16 @@ class Authorization:
             user = await select_by_email(login)
         else:
             user = await select_by_user(login)
-        if not user or not check_password_hash(user[0].password, password):
+        if not user or not check_password_hash(user.password, password):
             return {"message": "Неверный логин или пароль!",
                     "status_code": 400}
         else:
-            code = await generate_random_string(GENERATION_STRING_LENGTH)
+            code = await generate_random_string(int(GENERATION_STRING_LENGTH))
             try:
                 with open('template_message/t_pass.txt',
                           'r', encoding='utf-8') as file:
                     content = file.read()
-                await send_email(user[0].email, content, {'code': code})
+                await send_email(user.email, content, {'code': code})
                 return {"login": login, "code": code, "status_code": 200}
             except Exception as ex:
                 return {"message": str(ex), "status_code": 400}
@@ -247,7 +246,8 @@ class PasswordRecovery:
                     "status_code": 400}
         else:
             try:
-                code = await generate_random_string(GENERATION_STRING_LENGTH)
+                code = await generate_random_string(
+                    int(GENERATION_STRING_LENGTH))
                 with open('template_message/t_recover.txt',
                           'r', encoding='utf-8') as file:
                     content = file.read()
@@ -288,32 +288,3 @@ class PasswordRecovery:
                 return {"message": "Пароль обновлён!", "status_code": 200}
             except Exception as ex:
                 return {"message": ex, "status_code": 400}
-
-
-class Logout:
-    """
-        Удаление токена пользователя из базы данных redis.
-
-        Args:
-
-            token (str): Токен пользователя для удаления.
-
-        Returns:
-
-            dict: Результат операции удаления токена.
-            - "message" (str): Сообщение о результате операции.
-            - "status_code" (int): Код статуса операции.
-
-        Notes:
-
-            - Проверяет существование токена в базе данных redis.
-            - Удаляет токен, если он существует.
-    """
-    @staticmethod
-    async def delete_token(token: str):
-        """Метод удаляет токен из базы данных redis."""
-        if await redis_client.exists(token):
-            await redis_client.delete(f"token:{token}")
-            return {"message": "Выход выполнен!", "status_code": 308}
-        else:
-            return {"message": "Токен не валиден!", "status_code": 400}
