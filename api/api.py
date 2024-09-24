@@ -12,9 +12,10 @@ import sentry_sdk
 from sentry_sdk.integrations.fastapi import FastApiIntegration
 
 from backend.backend import (Authorization, PasswordRecovery,
-                             Registration)
+                             Registration, is_valid_email)
 from config import (SECRET_KEY, SENTRY_DNS, SESSION_STATE_CODE,
                     SESSION_STATE_MAIL)
+from database.FDataBase import select_by_email, select_by_user, update_is_active
 from jwt_tools.jwt import create_jwt_token, decode_jwt_token
 from models.models import (CodeConfirm, PasswordChange,
                            Recover, UserAuth, UserReg)
@@ -241,6 +242,9 @@ async def verification(data: CodeConfirm) -> JSONResponse:
     token = create_jwt_token(login=login,
                              token_lifetime_hours=1,
                              secret_key=SECRET_KEY)
+
+    await update_is_active(login, True)
+
     redis_client.setex(token, timedelta(hours=12), login)
     headers = {"Authorization": f"Bearer {token}"}
     response = JSONResponse(content={"message": "Вы авторизированны!"},
@@ -400,24 +404,34 @@ async def change_password(data: PasswordChange) -> JSONResponse:
                             status_code=400)
 
 
-# Изменить документацию!!! # Изменить документацию!!! # Изменить документацию!!! 
 @app_logout.post("/")
 async def logout(token: str = Depends(oauth2_scheme)) -> JSONResponse:
     """
     Обработчик выхода пользователя.
 
     Args:
+
         request (Request): HTTP запрос.
         data (Token): Токен пользователя для выхода.
 
     Returns:
+
         JSONResponse: Результат выхода пользователя.
-        - 308: Успешный выход, возможно с перенаправлением.
-        - Другие коды: Соответствующие сообщения об ошибках и коды статусов.
+        - 200: Успешное подтверждение, возвращает сообщение об успехе.
+        - 422: Ошибка валидации, возвращает сообщение об ошибке.
+        - 400: Ошибка состояния сессии, код не введен.
+
+    Notes:
+
+        1. Получает токен из заголовка Authorization.
+        2. Проверяет его наличие в Redis.
+        3. Удаляет токен из Redis, тем самым отменяя авторизацию пользователя.
     """
     if redis_client.exists(token):
         redis_client.delete(token)
-        return JSONResponse(content={"message": "Успешный выход"},
+        login = decode_jwt_token(token, SECRET_KEY)
+        await update_is_active(login['login'], True)
+        return JSONResponse(content={"message": "Успешный выход!"},
                             status_code=200)
     else:
         return JSONResponse(content={"message": "Токен не найден"},
