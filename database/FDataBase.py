@@ -51,7 +51,13 @@ async def delete_tables() -> None:
 
 
 async def select_by_user(login) -> List[User]:
-    """Получение данных из таблцы по логину."""
+    """
+    Получение данных из таблцы по логину.
+
+    args:
+
+        login: логин пользователя.
+    """
     async with AsyncSession(engine) as session:
         result = await session.execute(select(User).where(User.name == login))
         user = result.scalars().first()
@@ -59,7 +65,13 @@ async def select_by_user(login) -> List[User]:
 
 
 async def select_by_email(email) -> List[User]:
-    """Получение данных из таблцы по почте."""
+    """
+    Получение данных из таблцы по почте.
+
+    args:
+
+        email: почта пользователя.
+    """
     async with AsyncSession(engine) as session:
         result = await session.execute(select(User).where(User.email == email))
         user = result.scalars().first()
@@ -67,7 +79,15 @@ async def select_by_email(email) -> List[User]:
 
 
 async def add_user(email, login, password) -> None:
-    """Добавление пользователя в таблицу."""
+    """
+    Добавление пользователя в таблицу.
+
+    args:
+
+        email: почта пользователя.
+        login: логин пользователя.
+        password: пароль пользователя.
+    """
     async with AsyncSession(engine) as session:
         async with session.begin():
             result = User(email=email, name=login, password=password)
@@ -76,7 +96,14 @@ async def add_user(email, login, password) -> None:
 
 
 async def update_password(email, password) -> None:
-    """Изменение пароля пользователя по указанной почте."""
+    """
+    Изменение пароля пользователя по указанной почте.
+
+    args:
+
+        email: почта пользователя.
+        password: пароль пользователя.
+    """
     async with AsyncSession(engine) as session:
         async with session.begin():
             user = await session.execute(
